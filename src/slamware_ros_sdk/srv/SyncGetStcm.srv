@@ -1,0 +1,8 @@
+# Request
+string mapfile
+
+---
+
+# Response
+bool success
+string message
