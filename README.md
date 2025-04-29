@@ -27,34 +27,37 @@ To use the ROS2 SDK, you will need a device based on Aurora spatial mapping. The
 
 #### 1. Create workspace
 
-Place the `src` containing the source code into an empty workspace directory. For details, refer to: <a href="http://wiki.ros.org/catkin">https://docs.ros.org/en/humble/Tutorials/Beginner-Client-Libraries/Creating-A-Workspace/Creating-A-Workspace.html</a>, and use `colcon build` to initialize the workspace.
-
 ```bash
 mkdir -p ~/ros2_ws/src
 cd ~/ros2_ws/src
 ```
 
-#### 2. Compile
+#### 2. Download Source Code
+```bash
+git clone -b ros2 https://github.com/Slamtec/aurora_ros.git
+```
+
+#### 3. Compile
 
 ```bash
 cd ..
 colcon build
 ```
 
-#### 3. Setup workspace environment
+#### 4. Setup workspace environment
 
 ```bash
 echo "source ~/ros2_ws/install/setup.bash" >> ~/.bashrc
 source ~/.bashrc
 ```
 
-**Since `aurora_remote_public` library is a dynamic library, you need to add the platform path to `LD_LIBRARY_PATH`. For example, if you place `slamware_ros2_sdk_linux-x86_64-gcc9` in the `~/ros_ws/src` folder, you need to add the following command to `~/.bashrc`:**
+**Since `aurora_remote_public` library is a dynamic library, you need to add the platform path to `LD_LIBRARY_PATH`. For example, if you place `aurora_ros` in the `~/ros2_ws/src` folder, you need to add the following command to `~/.bashrc`:**
 
 ```
-export LD_LIBRARY_PATH=~/ros_ws/src/slamware_ros2_sdk_linux-x86_64-gcc9/src/aurora_remote_public/lib/linux_x86_64:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=~/ros2_ws/src/aurora_ros/src/aurora_remote_public/lib/linux_x86_64:$LD_LIBRARY_PATH
 ```
 
-#### 4. Launch the Node
+#### 5. Launch the Node
 
 If the Aurora device is in AP mode, connect to the Aurora Wi-Fi and launch the node.
 
@@ -62,5 +65,5 @@ If the Aurora device is in AP mode, connect to the Aurora Wi-Fi and launch the n
 ros2 launch slamware_ros_sdk slamware_ros_sdk_server_and_view.xml ip_address:=192.168.11.1
 ```
 
-#### 5. View Detailed Documentation
+#### 6. View Detailed Documentation
 For detailed information about the aurora_ros_sdk_server_node, refer to the related Wiki documentation: https://developer.slamtec.com/docs/slamware/aurora-ros2-sdk/slamware_ros_sdk_server_node/

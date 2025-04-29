@@ -26,21 +26,24 @@ Aurora ROS2 SDK包含了您开发过程中可能会用到的资源、代码，�
 
 #### 1. 创建工作空间
 
-将存放源码的src放入一个空的工作目录，详情见：<a href="http://wiki.ros.org/catkin">https://docs.ros.org/en/humble/Tutorials/Beginner-Client-Libraries/Creating-A-Workspace/Creating-A-Workspace.html，使用colcon build初始化工作空间
-
 ```bash
 mkdir -p ~/ros2_ws/src
 cd ~/ros2_ws/src
 ```
 
-#### 2. 编译
+#### 2. 下载源码
+```bash
+git clone -b ros2 https://github.com/Slamtec/aurora_ros.git
+```
+
+#### 3. 编译
 
 ```bash
 cd ..
 colcon build
 ```
 
-#### 3. 配置工作空间系统环境
+#### 4. 配置工作空间系统环境
 
 ```bash
 source install/setup.bash
@@ -53,13 +56,13 @@ echo "source ~/ros2_ws/install/setup.bash" >> ~/.bashrc
 source ~/.bashrc
 ```
 
-**由于aurora_remote_public lib为动态库，因此需要将所用平台路径加入到LD_LIBRARY_PATH中，如将slamware_ros2_sdk_linux-x86_64-gcc9放置在~/ros_ws/src文件夹下，需要将以下命令添加到 `~/.bashrc` 中**
+**由于aurora_remote_public lib为动态库，因此需要将所用平台路径加入到LD_LIBRARY_PATH中，如将aurora_ros放置在~/ros2_ws/src文件夹下，需要将以下命令添加到 `~/.bashrc` 中**
 
 ```
-export LD_LIBRARY_PATH=~/ros_ws/src/slamware_ros2_sdk_linux-x86_64-gcc9/src/aurora_remote_public/lib/linux_x86_64:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=~/ros2_ws/src/aurora_ros/src/aurora_remote_public/lib/linux_x86_64:$LD_LIBRARY_PATH
 ```
 
-#### 4. 启动节点
+#### 5. 启动节点
 
 若Aurora设备处于AP模式，连接Aurora WIFI，启动节点
 
@@ -67,5 +70,5 @@ export LD_LIBRARY_PATH=~/ros_ws/src/slamware_ros2_sdk_linux-x86_64-gcc9/src/auro
 ros2 launch slamware_ros_sdk slamware_ros_sdk_server_and_view.xml ip_address:=192.168.11.1
 ```
 
-#### 5. 查看详细文档
+#### 6. 查看详细文档
 关于aurora_ros_sdk_server_node的详细信息，请参考相关Wiki文档：https://developer.slamtec.com/docs/slamware/aurora-ros2-sdk/slamware_ros_sdk_server_node/
