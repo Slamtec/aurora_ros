@@ -1,0 +1,15 @@
+<!--
+  Used for visualising rplidar in action.  
+  
+  It requires rplidar.launch.
+ -->
+<launch>
+  <!-- 定义参数 -->
+  <arg name="ip_address" default="192.168.11.1" />
+
+  <include file="$(find slamware_ros_sdk)/launch/slamware_ros_sdk_server_node.launch" >
+    <arg name="ip_address" value="$(arg ip_address)" />
+  </include>
+
+  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find slamware_ros_sdk)/rviz/slamware_ros_sdk_server_node.rviz" />
+</launch>

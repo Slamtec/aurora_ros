@@ -1,0 +1,7 @@
+log/
+devel/
+build/
+install/
+.vs/
+src/CMakeLists.txt
+.catkin_workspace
