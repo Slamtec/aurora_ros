@@ -59,6 +59,11 @@ namespace slamware_ros_sdk {
         this->declare_parameter<std::string>("right_image_raw_topic_name", "/slamware_ros_sdk_server_node/right_image_raw");
         this->declare_parameter<std::string>("point_cloud_topic_name", "/slamware_ros_sdk_server_node/point_cloud");
         this->declare_parameter<std::string>("stereo_keypoints_topic_name", "/slamware_ros_sdk_server_node/stereo_keypoints");
+        
+        // Enhanced imaging topics
+        this->declare_parameter<std::string>("depth_image_raw_topic_name", "/slamware_ros_sdk_server_node/depth_image_raw");
+        this->declare_parameter<std::string>("depth_image_colorized_topic_name", "/slamware_ros_sdk_server_node/depth_image_colorized");
+        this->declare_parameter<std::string>("semantic_segmentation_topic_name", "/slamware_ros_sdk_server_node/semantic_segmentation");
 
         this->declare_parameter<std::string>("imu_raw_data_topic", "/slamware_ros_sdk_server_node/imu_raw_data");
     }
@@ -169,6 +174,17 @@ namespace slamware_ros_sdk {
         }
         if (nhRos->has_parameter("stereo_keypoints_topic_name")) {
             nhRos->declare_parameter<std::string>("stereo_keypoints_topic_name", strVal);
+        }
+        
+        // Enhanced imaging topics
+        if (nhRos->has_parameter("depth_image_raw_topic_name")) {
+            nhRos->declare_parameter<std::string>("depth_image_raw_topic_name", strVal);
+        }
+        if (nhRos->has_parameter("depth_image_colorized_topic_name")) {
+            nhRos->declare_parameter<std::string>("depth_image_colorized_topic_name", strVal);
+        }
+        if (nhRos->has_parameter("semantic_segmentation_topic_name")) {
+            nhRos->declare_parameter<std::string>("semantic_segmentation_topic_name", strVal);
         }
         if (nhRos->has_parameter("right_image_keypoints_topic_name")) {
             nhRos->declare_parameter<std::string>("right_image_keypoints_topic_name", strVal);

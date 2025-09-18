@@ -2,6 +2,7 @@
 #include "slamware_ros_sdk_server.h"
 #include <cassert>
 #include <limits>
+#include <random>
 #include <opencv2/opencv.hpp>
 #include <cv_bridge/cv_bridge.h>
 using namespace rp::standalone::aurora;
@@ -911,6 +912,11 @@ namespace slamware_ros_sdk {
         trackingFrame.leftImage.toMat(left);
         trackingFrame.rightImage.toMat(right);
 
+        // Check if images are empty before processing
+        if (left.empty() || right.empty()) {
+            return;
+        }
+
         // Convert BGR to RGB
         // convert to BGR
         cv::cvtColor(left, left, cv::COLOR_GRAY2BGR);
@@ -1176,4 +1182,243 @@ namespace slamware_ros_sdk {
     }
 
     //////////////////////////////////////////////////////////////////////////
+    
+    ServerEnhancedImagingWorker::ServerEnhancedImagingWorker(SlamwareRosSdkServer *pRosSdkServer,
+                                                             const std::string &wkName,
+                                                             const std::chrono::milliseconds &triggerInterval)
+        : super_t(pRosSdkServer, wkName, triggerInterval)
+        , depthCameraSupported_(false)
+        , semanticSegmentationSupported_(false)
+        , isInitialized_(false)
+    {
+        const auto& srvParams = serverParams();
+        auto nhRos = rosNodeHandle();
+        
+        // Initialize depth camera publishers
+        pubDepthImage_ = nhRos->create_publisher<sensor_msgs::msg::Image>(srvParams.getParameter<std::string>("depth_image_raw_topic_name"), 1);
+        pubDepthColorized_ = nhRos->create_publisher<sensor_msgs::msg::Image>(srvParams.getParameter<std::string>("depth_image_colorized_topic_name"), 1);
+                
+        // Initialize semantic segmentation publishers
+        pubSemanticSegmentation_ = nhRos->create_publisher<sensor_msgs::msg::Image>(srvParams.getParameter<std::string>("semantic_segmentation_topic_name"), 1);
+    }
+
+    ServerEnhancedImagingWorker::~ServerEnhancedImagingWorker()
+    {
+    }
+
+    bool ServerEnhancedImagingWorker::reinitWorkLoop()
+    {
+        if (!this->super_t::reinitWorkLoop())
+            return false;
+
+        auto auroraSDK = rosSdkServer()->safeGetAuroraSdk();
+        if (!auroraSDK) {
+            isWorkLoopInitOk_ = false;
+            return false;
+        }
+
+        // Check depth camera support
+        depthCameraSupported_ = auroraSDK->enhancedImaging.isDepthCameraSupported();
+        if (depthCameraSupported_) {
+            auroraSDK->controller.setEnhancedImagingSubscription(SLAMTEC_AURORA_SDK_ENHANCED_IMAGE_TYPE_DEPTH, true);
+            // Enable depth camera post-filtering (refines depth data; flags currently ignored by SDK)
+            auroraSDK->enhancedImaging.setDepthCameraPostFiltering(true, 0);
+            RCLCPP_INFO(rosNodeHandle()->get_logger(), "Depth camera supported, subscription enabled, post-filtering on");
+        } else {
+            RCLCPP_WARN(rosNodeHandle()->get_logger(), "Depth camera not supported");
+        }
+
+        // Check semantic segmentation support
+        semanticSegmentationSupported_ = auroraSDK->enhancedImaging.isSemanticSegmentationReady();
+        if (semanticSegmentationSupported_) {
+            auroraSDK->controller.setEnhancedImagingSubscription(SLAMTEC_AURORA_SDK_ENHANCED_IMAGE_TYPE_SEMANTIC, true);
+            RCLCPP_INFO(rosNodeHandle()->get_logger(), "Semantic segmentation supported and subscription enabled");
+            
+            // Get semantic segmentation label information
+            std::string labelSetName;
+            if (auroraSDK->enhancedImaging.getSemanticSegmentationLabelSetName(labelSetName)) {
+                RCLCPP_INFO(rosNodeHandle()->get_logger(), "Semantic segmentation label set: %s", labelSetName.c_str());
+            }
+            
+            slamtec_aurora_sdk_semantic_segmentation_label_info_t labelInfo;
+            if (auroraSDK->enhancedImaging.getSemanticSegmentationLabels(labelInfo)) {
+                for (int i = 0; i < labelInfo.label_count; ++i) {
+                    RCLCPP_INFO(rosNodeHandle()->get_logger(), "Label ID: %d, Name: %s", i, labelInfo.label_names[i].name);
+                }
+                // Generate class colors
+                generateClassColors(labelInfo.label_count);
+                RCLCPP_INFO(rosNodeHandle()->get_logger(), "Class colors generated");
+            }
+        } else {
+            RCLCPP_WARN(rosNodeHandle()->get_logger(), "Semantic segmentation not supported");
+        }
+
+        isInitialized_ = true;
+        isWorkLoopInitOk_ = true;
+        return isWorkLoopInitOk_;
+    }
+
+    void ServerEnhancedImagingWorker::doPerform()
+    {
+        if (!isInitialized_) {
+            return;
+        }
+
+        auto auroraSDK = rosSdkServer()->safeGetAuroraSdk();
+        if (!auroraSDK) {
+            return;
+        }
+
+        auto currentTime = rclcpp::Clock().now();
+        std_msgs::msg::Header header;
+        header.stamp = currentTime;
+        header.frame_id = "camera_depth_optical_frame";
+
+        // Process depth camera data
+        if (depthCameraSupported_) {
+            processDepthCamera(header);
+        }
+
+        // Process semantic segmentation data
+        if (semanticSegmentationSupported_) {
+            processSemanticSegmentation(header);
+        }
+    }
+
+    void ServerEnhancedImagingWorker::processDepthCamera(const std_msgs::msg::Header& header)
+    {
+        auto auroraSDK = rosSdkServer()->safeGetAuroraSdk();
+        if (!auroraSDK) {
+            return;
+        }
+
+        RemoteEnhancedImagingFrame depthFrame;
+        
+        // Early return if no frame available
+        if (!auroraSDK->enhancedImaging.waitDepthCameraNextFrame(1000)) {
+            return;
+        }
+        
+        // Early return if cannot peek frame
+        if (!auroraSDK->enhancedImaging.peekDepthCameraFrame(depthFrame, SLAMTEC_AURORA_SDK_DEPTHCAM_FRAME_TYPE_DEPTH_MAP)) {
+            return;
+        }
+        
+        cv::Mat depthImg;
+        depthFrame.image.toMat(depthImg);
+        
+        // Publish raw depth image
+        cv_bridge::CvImage depthBridge(header, sensor_msgs::image_encodings::TYPE_32FC1, depthImg);
+        pubDepthImage_->publish(*depthBridge.toImageMsg());
+        
+        // Create and publish colorized depth image
+        cv::Mat heatmap;
+        depthImg.convertTo(heatmap, CV_8UC1, -255.0 / 10.0f, 255);
+        cv::Mat depthColorized;
+        cv::applyColorMap(heatmap, depthColorized, cv::COLORMAP_JET);
+        
+        cv_bridge::CvImage depthColorizedBridge(header, sensor_msgs::image_encodings::BGR8, depthColorized);
+        pubDepthColorized_->publish(*depthColorizedBridge.toImageMsg());
+    }
+
+    void ServerEnhancedImagingWorker::processSemanticSegmentation(const std_msgs::msg::Header& header)
+    {
+        auto auroraSDK = rosSdkServer()->safeGetAuroraSdk();
+        if (!auroraSDK) {
+            return;
+        }
+
+        RemoteEnhancedImagingFrame segFrame;
+        
+        // Early return if no frame available
+        if (!auroraSDK->enhancedImaging.waitSemanticSegmentationNextFrame(1000)) {
+            return;
+        }
+        
+        // Early return if cannot peek frame
+        if (!auroraSDK->enhancedImaging.peekSemanticSegmentationFrame(segFrame)) {
+            return;
+        }
+
+        cv::Mat localSegMap;
+        segFrame.image.toMat(localSegMap);
+        auto currentSegMap = localSegMap.clone();
+
+        if (currentSegMap.empty()) {
+           return; 
+        }
+        
+        // Peek camera preview image for overlay (if needed)
+        RemoteStereoImagePair cameraImagePair;
+        cv::Mat currentCameraImage;
+        
+        if (auroraSDK->dataProvider.peekCameraPreviewImage(cameraImagePair, segFrame.desc.timestamp_ns, true)) {
+            cameraImagePair.leftImage.toMat(currentCameraImage);
+            if (currentCameraImage.channels() == 1) {
+                cv::cvtColor(currentCameraImage, currentCameraImage, cv::COLOR_GRAY2BGR);
+            }
+        }
+
+        auto currentColorizedSegMap = colorizeSegmentationMap(currentSegMap);
+        auto currentOverlayBase = createCameraOverlay(currentCameraImage, currentColorizedSegMap);
+
+        // Publish colorized segmentation
+        cv_bridge::CvImage segBridge(header, sensor_msgs::image_encodings::BGR8, currentOverlayBase);
+        pubSemanticSegmentation_->publish(*segBridge.toImageMsg());
+    }
+
+    cv::Mat ServerEnhancedImagingWorker::createCameraOverlay(const cv::Mat& cameraImage, const cv::Mat& colorizedSegMap)
+    {
+        if (cameraImage.empty() || colorizedSegMap.empty()) {
+            return colorizedSegMap.clone();
+        }
+        
+        cv::Mat overlay = cameraImage.clone();
+        
+        // Optimized blending using OpenCV vectorized operations
+        cv::Mat mask;
+        cv::inRange(colorizedSegMap, cv::Scalar(1, 1, 1), cv::Scalar(255, 255, 255), mask);
+        
+        // Blend only non-black pixels
+        cv::Mat blendedSeg;
+        cv::addWeighted(cameraImage, 0.6, colorizedSegMap, 0.4, 0, blendedSeg);
+        blendedSeg.copyTo(overlay, mask);
+        
+        return overlay;
+    }
+
+    cv::Mat ServerEnhancedImagingWorker::colorizeSegmentationMap(const cv::Mat& segMap)
+    {
+        cv::Mat colorized(segMap.size(), CV_8UC3);
+        for (int y = 0; y < segMap.rows; y++) {
+            for (int x = 0; x < segMap.cols; x++) {
+                uint8_t classId = segMap.at<uint8_t>(y, x);
+                if (classId < classColors_.size()) {
+                    colorized.at<cv::Vec3b>(y, x) = classColors_[classId];
+                } else {
+                    colorized.at<cv::Vec3b>(y, x) = cv::Vec3b(128, 128, 128); // Gray for unknown classes
+                }
+            }
+        }
+        
+        return colorized;
+    }
+
+    void ServerEnhancedImagingWorker::generateClassColors(int numClasses) {
+        classColors_.clear();
+        classColors_.resize(numClasses);
+        
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<> dis(50, 255);
+        
+        // Set background (index 0) to black for transparency effect
+        classColors_[0] = cv::Vec3b(0, 0, 0);
+        
+        // Generate random colors for other classes
+        for (int i = 1; i < numClasses; i++) {
+            classColors_[i] = cv::Vec3b(dis(gen), dis(gen), dis(gen));
+        }
+    }
+
 }

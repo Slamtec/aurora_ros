@@ -289,6 +289,12 @@ namespace slamware_ros_sdk {
             }
 
             {
+                //add ServerEnhancedImagingWorker
+                auto svrWk = std::make_shared<ServerEnhancedImagingWorker>(this, "EnhancedImaging", sfConvFloatSecToChronoMs_(params_.getParameter<float>("enhanced_imaging_pub_period")));
+                serverWorkers_.push_back(svrWk);
+            }
+
+            {
                 //add ServerPointCloudWorker
                 auto svrWk = std::make_shared<ServerPointCloudWorker>(this, "PointCloud", sfConvFloatSecToChronoMs_(params_.getParameter<float>("point_cloud_pub_period")));   
                 serverWorkers_.push_back(svrWk);
@@ -720,23 +726,30 @@ namespace slamware_ros_sdk {
 
     void SlamwareRosSdkServer::checkRelocalizationStatus()
     {
-        slamtec_aurora_sdk_relocalization_status_t result;
         auto aurora = safeGetAuroraSdk();
-        aurora->dataProvider.peekRelocalizationStatus(result);
-        if (result.status == 2)
+        if (!aurora)
+        {
+            return;
+        }
+
+        // Query the last relocalization result with non-blocking timeout to keep loop responsive
+        slamtec_aurora_sdk_device_relocalization_status_t last_status = SLAMTEC_AURORA_SDK_DEVICE_RELOCALIZATION_STATUS_NONE;
+        aurora->controller.getLastRelocalizationStatus(last_status);
+
+        if (last_status == SLAMTEC_AURORA_SDK_DEVICE_RELOCALIZATION_STATUS_SUCCEED)
         {
             RCLCPP_INFO(this->get_logger(), "Relocalization succeeded");
             relocalization_active_.store(false);
         }
-        else if (result.status == 3)
+        else if (last_status == SLAMTEC_AURORA_SDK_DEVICE_RELOCALIZATION_STATUS_FAILED)
         {
             RCLCPP_ERROR(this->get_logger(), "Relocalization failed");
             relocalization_active_.store(false);
         }
-        else if (result.status == 4)
+        else if (last_status == SLAMTEC_AURORA_SDK_DEVICE_RELOCALIZATION_STATUS_IN_PROGRESS
+            || last_status == SLAMTEC_AURORA_SDK_DEVICE_RELOCALIZATION_STATUS_NONE)
         {
-            RCLCPP_INFO(this->get_logger(), "Relocalization canceled by system");
-            relocalization_active_.store(false);
+            // still waiting; keep background loop running
         }
     }
 }

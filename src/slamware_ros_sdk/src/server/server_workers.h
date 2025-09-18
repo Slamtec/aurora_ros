@@ -25,6 +25,7 @@
 #include <aurora_pubsdk_inc.h>
 #include <optional>
 #include <chrono>
+#include <opencv2/opencv.hpp>
 
 using namespace rp::standalone::aurora;
 
@@ -239,6 +240,48 @@ namespace slamware_ros_sdk {
         // rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr pubRightKeyPoints_;
 
         rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pubStereoKeyPoints_;
+    };
+
+    //////////////////////////////////////////////////////////////////////////
+
+    class ServerEnhancedImagingWorker: public ServerWorkerBase
+    {
+    public:
+        typedef ServerWorkerBase super_t;
+        
+    public:
+        ServerEnhancedImagingWorker(SlamwareRosSdkServer* pRosSdkServer
+            , const std::string& wkName
+            , const std::chrono::milliseconds& triggerInterval
+            );
+        virtual ~ServerEnhancedImagingWorker();
+
+        virtual bool reinitWorkLoop();
+
+    protected:
+        virtual void doPerform();
+
+    private:
+        // Helper functions
+        void processDepthCamera(const std_msgs::msg::Header& header);
+        void processSemanticSegmentation(const std_msgs::msg::Header& header);
+        cv::Mat createCameraOverlay(const cv::Mat& cameraImage, const cv::Mat& colorizedSegMap);
+        cv::Mat colorizeSegmentationMap(const cv::Mat& segMap);
+        void generateClassColors(int numClasses);
+        
+        // Depth camera publishers
+        rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pubDepthImage_;
+        rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pubDepthColorized_;
+        
+        // Semantic segmentation publishers
+        rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pubSemanticSegmentation_;
+
+        std::vector<cv::Vec3b> classColors_;
+        
+        // Status flags
+        bool depthCameraSupported_;
+        bool semanticSegmentationSupported_;
+        bool isInitialized_;
     };
 
     // // lef riht camera info pub
