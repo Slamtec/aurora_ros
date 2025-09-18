@@ -189,6 +189,13 @@ namespace slamware_ros_sdk
             }
 
             {
+                // Add ServerEnhancedImagingWorker
+                auto svrWk = std::make_shared<ServerEnhancedImagingWorker>(this, "EnhancedImaging", sfConvFloatSecToBoostMs_(params_.enhanced_imaging_pub_period));
+                serverWorkers_.push_back(svrWk);
+               
+            }
+
+            {
                 ROS_INFO("PointCloud:%.4f", params_.point_cloud_pub_period);
                 // add ServerPointCloudWorker
                 auto svrWk = std::make_shared<ServerPointCloudWorker>(this, "PointCloud", sfConvFloatSecToBoostMs_(params_.point_cloud_pub_period));
@@ -791,23 +798,30 @@ namespace slamware_ros_sdk
 
     void SlamwareRosSdkServer::checkRelocalizationStatus()
     {
-        slamtec_aurora_sdk_relocalization_status_t result;
         auto aurora = safeGetAuroraSdk();
-        aurora->dataProvider.peekRelocalizationStatus(result);
-        if (result.status == 2)
+        if (!aurora)
+        {
+            return;
+        }
+
+        // Query the last relocalization result with non-blocking timeout to keep loop responsive
+        slamtec_aurora_sdk_device_relocalization_status_t last_status = SLAMTEC_AURORA_SDK_DEVICE_RELOCALIZATION_STATUS_NONE;
+        aurora->controller.getLastRelocalizationStatus(last_status);
+
+        if (last_status == SLAMTEC_AURORA_SDK_DEVICE_RELOCALIZATION_STATUS_SUCCEED)
         {
             ROS_INFO("Relocalization succeeded");
             relocalization_active_.store(false);
         }
-        else if (result.status == 3)
+        else if (last_status == SLAMTEC_AURORA_SDK_DEVICE_RELOCALIZATION_STATUS_FAILED)
         {
             ROS_INFO("Relocalization failed");
             relocalization_active_.store(false);
         }
-        else if (result.status == 4)
+        else if (last_status == SLAMTEC_AURORA_SDK_DEVICE_RELOCALIZATION_STATUS_IN_PROGRESS
+            || last_status == SLAMTEC_AURORA_SDK_DEVICE_RELOCALIZATION_STATUS_NONE)
         {
-            ROS_INFO("Relocalization canceled by system");
-            relocalization_active_.store(false);
+            // still waiting; keep background loop running
         }
     }
 }

@@ -43,6 +43,7 @@ namespace slamware_ros_sdk
         float point_cloud_pub_period;
         float robot_basic_state_pub_period;
         float odometry_pub_period;
+        float enhanced_imaging_pub_period;
 
         float event_period;
 
@@ -59,6 +60,9 @@ namespace slamware_ros_sdk
         std::string robot_pose_topic;
         std::string odom_topic;
         std::string odom_frame;
+        std::string depth_image_raw_topic_name;
+        std::string depth_image_colorized_topic_name;
+        std::string semantic_segmentation_topic_name;
 
         bool raw_ladar_data;
 

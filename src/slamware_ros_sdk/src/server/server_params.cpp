@@ -25,6 +25,7 @@ namespace slamware_ros_sdk
     void ServerParams::resetToDefault()
     {
         ip_address = "192.168.11.1";
+        robot_port = 1445;
         reconn_wait_ms = (1000U * 3U);
 
         angle_compensate = true;
@@ -52,6 +53,7 @@ namespace slamware_ros_sdk
         point_cloud_pub_period = 0.1f;
         robot_basic_state_pub_period = 0.1f;
         odometry_pub_period = 0.1f;
+        enhanced_imaging_pub_period = 0.1f;
 
         scan_topic = "/slamware_ros_sdk_server_node/scan";
         robot_pose_topic = "/slamware_ros_sdk_server_node/robot_pose";
@@ -65,6 +67,11 @@ namespace slamware_ros_sdk
         point_cloud_topic_name = "/slamware_ros_sdk_server_node/point_cloud";
         stereo_keypoints_topic_name = "/slamware_ros_sdk_server_node/stereo_keypoints";
         imu_raw_data_topic = "/slamware_ros_sdk_server_node/imu_raw_data";
+
+        // Enhanced imaging topics
+        depth_image_raw_topic_name = "/slamware_ros_sdk_server_node/depth_image_raw";
+        depth_image_colorized_topic_name = "/slamware_ros_sdk_server_node/depth_image_colorized";
+        semantic_segmentation_topic_name = "/slamware_ros_sdk_server_node/semantic_segmentation";
 
         event_period = 1.0f;
     }
@@ -116,6 +123,10 @@ namespace slamware_ros_sdk
         nhRos.getParam("point_cloud_topic_name", point_cloud_topic_name);
         nhRos.getParam("stereo_keypoints_topic_name", stereo_keypoints_topic_name);
         nhRos.getParam("imu_raw_data_topic", imu_raw_data_topic);
+        // Enhanced imaging topics
+        nhRos.getParam("depth_image_raw_topic_name", depth_image_raw_topic_name);
+        nhRos.getParam("depth_image_colorized_topic_name", depth_image_colorized_topic_name);
+        nhRos.getParam("semantic_segmentation_topic_name", semantic_segmentation_topic_name);
     }
 
 }

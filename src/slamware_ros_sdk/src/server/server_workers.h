@@ -18,6 +18,7 @@
 #include <aurora_pubsdk_inc.h>
 #include <optional>
 #include <chrono>
+#include <opencv2/opencv.hpp>
 
 using namespace rp::standalone::aurora;
 
@@ -248,6 +249,50 @@ namespace slamware_ros_sdk
 
         ros::Publisher pubStereoKeyPoints_;
     };
+
+    //////////////////////////////////////////////////////////////////////////
+
+        class ServerEnhancedImagingWorker: public ServerWorkerBase
+        {
+        public:
+            typedef ServerWorkerBase super_t;
+            
+        public:
+            ServerEnhancedImagingWorker(SlamwareRosSdkServer* pRosSdkServer
+                , const std::string& wkName
+                , const std::chrono::milliseconds& triggerInterval
+                );
+            virtual ~ServerEnhancedImagingWorker();
+
+            virtual bool reinitWorkLoop();
+
+        protected:
+            virtual void doPerform();
+
+        private:
+            // Helper functions
+            void processDepthCamera(const std_msgs::Header& header);
+            void processSemanticSegmentation(const std_msgs::Header& header);
+            cv::Mat createCameraOverlay(const cv::Mat& cameraImage, const cv::Mat& colorizedSegMap);
+            cv::Mat colorizeSegmentationMap(const cv::Mat& segMap);
+            void generateClassColors(int numClasses);
+            
+            // Depth camera publishers
+            ros::Publisher pubDepthImage_;
+            ros::Publisher pubDepthColorized_;
+            
+            // Semantic segmentation publishers
+            ros::Publisher pubSemanticSegmentation_;
+
+            std::vector<cv::Vec3b> classColors_;
+            
+            // Status flags
+            bool depthCameraSupported_;
+            bool semanticSegmentationSupported_;
+            bool isInitialized_;
+        };
+
+    //////////////////////////////////////////////////////////////////////////
 
     class ServerPointCloudWorker : public ServerWorkerBase
     {
