@@ -315,8 +315,10 @@ namespace slamware_ros_sdk {
             , knownArea.x(), knownArea.y(), knownArea.width(), knownArea.height()
             , knownCellIdxRect.x(), knownCellIdxRect.y(), knownCellIdxRect.width(), knownCellIdxRect.height()
             );
-        if (ServerMapHolder::sfIsCellIdxRectEmpty(knownCellIdxRect) || 
-            knownCellIdxRect.width() < MIN_VALID_MAP_DIMENSION || knownCellIdxRect.height() < MIN_VALID_MAP_DIMENSION)
+        //Maintain consistency between ROS1 and ROS2 code to eliminate unnecessary errors
+        // if (ServerMapHolder::sfIsCellIdxRectEmpty(knownCellIdxRect) || 
+        //     knownCellIdxRect.width() < MIN_VALID_MAP_DIMENSION || knownCellIdxRect.height() < MIN_VALID_MAP_DIMENSION)
+        if (ServerMapHolder::sfIsCellIdxRectEmpty(knownCellIdxRect))
         {
             RCLCPP_ERROR(rclcpp::get_logger("server workers"), "sync map, knownCellIdxRect is empty or too small.");
             return false;
@@ -917,9 +919,13 @@ namespace slamware_ros_sdk {
             return;
         }
 
-        // Convert BGR to RGB
-        // convert to BGR
-        cv::cvtColor(left, left, cv::COLOR_GRAY2BGR);
+        // Convert BGR or GRAY to RGB
+        if(left.channels()==3)
+            cv::cvtColor(left, left, cv::COLOR_BGR2RGB);
+        else if(left.channels()==1)
+            cv::cvtColor(left, left, cv::COLOR_GRAY2RGB);
+        else
+            return;
         const auto& srvParams = serverParams();
         // Get left and right images from the Aurora SDK
         std_msgs::msg::Header header_left;
@@ -930,7 +936,12 @@ namespace slamware_ros_sdk {
         sensor_msgs::msg::Image::SharedPtr leftImage = img_bridge_left.toImageMsg();
         pubLeftImage_->publish(*leftImage);
 
-        cv::cvtColor(right, right, cv::COLOR_GRAY2BGR);
+        if(right.channels()==3)
+            cv::cvtColor(right, right, cv::COLOR_BGR2RGB);
+        else if(right.channels()==1)
+            cv::cvtColor(right, right, cv::COLOR_GRAY2RGB);
+        else
+            return;
         std_msgs::msg::Header header_right;
         cv_bridge::CvImage img_bridge_right;
         header_right.frame_id = srvParams.getParameter<std::string>("camera_right");
