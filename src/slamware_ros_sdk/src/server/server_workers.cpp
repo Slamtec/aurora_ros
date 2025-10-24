@@ -1072,9 +1072,13 @@ namespace slamware_ros_sdk
             return;
         }
 
-        // Convert BGR to RGB
-        // convert to BGR
-        cv::cvtColor(left, left, cv::COLOR_GRAY2BGR);
+        // Convert BGR or GRAY to RGB
+        if(left.channels()==3)
+            cv::cvtColor(left, left, cv::COLOR_BGR2RGB);
+        else if(left.channels()==1)
+            cv::cvtColor(left, left, cv::COLOR_GRAY2RGB);
+        else
+            return;
         const auto &srvParams = serverParams();
         // Get left and right images from the Aurora SDK
         std_msgs::Header header_left;
@@ -1086,7 +1090,13 @@ namespace slamware_ros_sdk
         img_bridge_left.toImageMsg(leftImage);
         pubLeftImage_.publish(leftImage);
 
-        cv::cvtColor(right, right, cv::COLOR_GRAY2BGR);
+        if(right.channels()==3)
+            cv::cvtColor(right, right, cv::COLOR_BGR2RGB);
+        else if(right.channels()==1)
+            cv::cvtColor(right, right, cv::COLOR_GRAY2RGB);
+        else
+            return;
+
         std_msgs::Header header_right;
         cv_bridge::CvImage img_bridge_right;
         header_right.frame_id = srvParams.camera_right;
