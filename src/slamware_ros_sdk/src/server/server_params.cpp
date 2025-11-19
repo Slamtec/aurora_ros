@@ -49,11 +49,12 @@ namespace slamware_ros_sdk
 
         imu_raw_data_period = 0.05f;
         system_status_pub_period = 0.05f;
-        stereo_image_pub_period = 0.067f;
+        // stereo_image_pub_period = 0.067f;
+        stereo_image_pub_period = 0.05f;
         point_cloud_pub_period = 0.1f;
         robot_basic_state_pub_period = 0.1f;
         odometry_pub_period = 0.1f;
-        enhanced_imaging_pub_period = 0.1f;
+        enhanced_imaging_pub_period = 0.05f;
 
         scan_topic = "/slamware_ros_sdk_server_node/scan";
         robot_pose_topic = "/slamware_ros_sdk_server_node/robot_pose";

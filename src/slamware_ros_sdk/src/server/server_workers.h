@@ -82,6 +82,7 @@ namespace slamware_ros_sdk
 
     private:
         ros::Publisher pubRobotPose_;
+        uint64_t lastTimestamp_;
     };
 
     //////////////////////////////////////////////////////////////////////////
@@ -185,6 +186,8 @@ namespace slamware_ros_sdk
     private:
         uint64_t lastTimestamp_;
         ros::Publisher pubImuRawData_;
+        _Float32 acc_scale_;
+        _Float32 gyro_scale_;
     };
 
     //////////////////////////////////////////////////////////////////////////
@@ -248,6 +251,7 @@ namespace slamware_ros_sdk
         ros::Publisher pubRightImage_;
 
         ros::Publisher pubStereoKeyPoints_;
+        uint64_t lastTimestamp_;
     };
 
     //////////////////////////////////////////////////////////////////////////
@@ -290,6 +294,10 @@ namespace slamware_ros_sdk
             bool depthCameraSupported_;
             bool semanticSegmentationSupported_;
             bool isInitialized_;
+
+            //store the latest timestamp of received image
+            uint64_t depth_lastTimestamp_;
+            uint64_t segmentation_lastTimestamp_;
         };
 
     //////////////////////////////////////////////////////////////////////////
