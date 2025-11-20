@@ -99,7 +99,7 @@ namespace slamware_ros_sdk {
         , const std::string& wkName
         , const std::chrono::milliseconds& triggerInterval
         )
-        : ServerWorkerBase(pRosSdkServer, wkName, triggerInterval)
+        : ServerWorkerBase(pRosSdkServer, wkName, triggerInterval),lastTimestamp_(0)
     {
         const auto& srvParams = serverParams();
         auto nhRos = rosNodeHandle();
@@ -124,7 +124,22 @@ namespace slamware_ros_sdk {
         }
 
         slamtec_aurora_sdk_pose_se3_t pose;
-        auroraSDK->dataProvider.getCurrentPoseSE3(pose);
+        uint64_t pose_timestamp;
+        if(auroraSDK->dataProvider.getCurrentPoseSE3WithTimestamp(pose,pose_timestamp))
+        {
+            if(pose_timestamp>lastTimestamp_)
+            {
+                lastTimestamp_ = pose_timestamp;
+            }
+            else
+            {
+                return;
+            }
+        }
+        else
+        {
+            return;
+        }
         wkDat->robotPose.header.stamp = rclcpp::Clock().now();
         wkDat->robotPose.pose.position.x = pose.translation.x;
         wkDat->robotPose.pose.position.y = pose.translation.y;
@@ -882,13 +897,13 @@ namespace slamware_ros_sdk {
     ServerStereoImageWorker::ServerStereoImageWorker(SlamwareRosSdkServer *pRosSdkServer,
                                                      const std::string &wkName,
                                                      const std::chrono::milliseconds &triggerInterval)
-        : super_t(pRosSdkServer, wkName, triggerInterval)
+        : super_t(pRosSdkServer, wkName, triggerInterval),lastTimestamp_(0)
     {
         const auto& srvParams = serverParams();
         auto nhRos = rosNodeHandle();
-        pubLeftImage_ = nhRos->create_publisher<sensor_msgs::msg::Image>(srvParams.getParameter<std::string>("left_image_raw_topic_name"), 1);
-        pubRightImage_ = nhRos->create_publisher<sensor_msgs::msg::Image>(srvParams.getParameter<std::string>("right_image_raw_topic_name"), 1);
-        pubStereoKeyPoints_ = nhRos->create_publisher<sensor_msgs::msg::Image>(srvParams.getParameter<std::string>("stereo_keypoints_topic_name"), 1);
+        pubLeftImage_ = nhRos->create_publisher<sensor_msgs::msg::Image>(srvParams.getParameter<std::string>("left_image_raw_topic_name"), 5);
+        pubRightImage_ = nhRos->create_publisher<sensor_msgs::msg::Image>(srvParams.getParameter<std::string>("right_image_raw_topic_name"), 5);
+        pubStereoKeyPoints_ = nhRos->create_publisher<sensor_msgs::msg::Image>(srvParams.getParameter<std::string>("stereo_keypoints_topic_name"), 5);
     }
 
     ServerStereoImageWorker::~ServerStereoImageWorker()
@@ -906,9 +921,22 @@ namespace slamware_ros_sdk {
         // Fill leftImage and rightImage with actual data from Aurora SDK
         auto auroraSDK = rosSdkServer()->safeGetAuroraSdk();
         RemoteTrackingFrameInfo trackingFrame;
-        if (!auroraSDK->dataProvider.peekTrackingData(trackingFrame)) {
-            return;
+        //filter outdate frame
+        if (auroraSDK->dataProvider.peekTrackingData(trackingFrame))
+        {
+            if(trackingFrame.trackingInfo.timestamp_ns>lastTimestamp_)
+            {
+                lastTimestamp_ = trackingFrame.trackingInfo.timestamp_ns;
+            }
+            else
+            {
+                return;
+            }
         }
+       else
+       {
+            return;
+       }
 
         cv::Mat left, right;
         trackingFrame.leftImage.toMat(left);
@@ -947,7 +975,8 @@ namespace slamware_ros_sdk {
         header_right.frame_id = srvParams.getParameter<std::string>("camera_right");
         header_right.stamp = rclcpp::Clock().now();
         img_bridge_right = cv_bridge::CvImage(header_right, sensor_msgs::image_encodings::RGB8, right);
-        sensor_msgs::msg::Image::SharedPtr rightImage = img_bridge_left.toImageMsg();
+        sensor_msgs::msg::Image::SharedPtr rightImage = img_bridge_right.toImageMsg();
+        // sensor_msgs::msg::Image::SharedPtr rightImage = img_bridge_left.toImageMsg();
         pubRightImage_->publish(*rightImage);
 
         // Get left and right keypoints from the Aurora SDK
@@ -1006,7 +1035,11 @@ namespace slamware_ros_sdk {
     {
         const auto& srvParams = serverParams();
         auto nhRos = rosNodeHandle();
-        pubImuRawData_ = nhRos->create_publisher<sensor_msgs::msg::Imu>(srvParams.getParameter<std::string>("imu_raw_data_topic"), 1);
+        pubImuRawData_ = nhRos->create_publisher<sensor_msgs::msg::Imu>(srvParams.getParameter<std::string>("imu_raw_data_topic"), 10);
+        //convert g to m/s2
+        acc_scale_ = 9.806649344;
+        // convert dps to rad/s
+        gyro_scale_ = M_PI/180;
     }
 
     ServerImuRawDataWorker::~ServerImuRawDataWorker()
@@ -1030,6 +1063,7 @@ namespace slamware_ros_sdk {
         }
 
         std::vector<slamtec_aurora_sdk_imu_data_t> imuData;
+        const auto& srvParams = serverParams();
         if (auroraSDK->dataProvider.peekIMUData(imuData))
         {
             for (auto &imu : imuData)
@@ -1041,13 +1075,14 @@ namespace slamware_ros_sdk {
                 }
                 lastTimestamp_ = imu.timestamp_ns;
                 sensor_msgs::msg::Imu imuRawDataRos;
-                imuRawDataRos.linear_acceleration.x = imu.acc[0];
-                imuRawDataRos.linear_acceleration.y = imu.acc[1];
-                imuRawDataRos.linear_acceleration.z = imu.acc[2];
-                imuRawDataRos.angular_velocity.x = imu.gyro[0];
-                imuRawDataRos.angular_velocity.y = imu.gyro[1];
-                imuRawDataRos.angular_velocity.z = imu.gyro[2];
+                imuRawDataRos.linear_acceleration.x = imu.acc[0]*acc_scale_;
+                imuRawDataRos.linear_acceleration.y = imu.acc[1]*acc_scale_;
+                imuRawDataRos.linear_acceleration.z = imu.acc[2]*acc_scale_;
+                imuRawDataRos.angular_velocity.x = imu.gyro[0]*gyro_scale_;
+                imuRawDataRos.angular_velocity.y = imu.gyro[1]*gyro_scale_;
+                imuRawDataRos.angular_velocity.z = imu.gyro[2]*gyro_scale_;
                 imuRawDataRos.header.stamp = rclcpp::Clock().now();
+                imuRawDataRos.header.frame_id = srvParams.getParameter<std::string>("imu_frame");
                 pubImuRawData_->publish(imuRawDataRos);
             }
         }
@@ -1058,7 +1093,7 @@ namespace slamware_ros_sdk {
     {
         const auto& srvParams = serverParams();
         auto nhRos = rosNodeHandle();
-        pubPointCloud_ = nhRos->create_publisher<sensor_msgs::msg::PointCloud2>(srvParams.getParameter<std::string>("point_cloud_topic_name"), 1);
+        pubPointCloud_ = nhRos->create_publisher<sensor_msgs::msg::PointCloud2>(srvParams.getParameter<std::string>("point_cloud_topic_name"), 5);
     }
 
     ServerPointCloudWorker::~ServerPointCloudWorker()
@@ -1201,16 +1236,17 @@ namespace slamware_ros_sdk {
         , depthCameraSupported_(false)
         , semanticSegmentationSupported_(false)
         , isInitialized_(false)
+        , depth_lastTimestamp_(0),segmentation_lastTimestamp_(0)
     {
         const auto& srvParams = serverParams();
         auto nhRos = rosNodeHandle();
         
         // Initialize depth camera publishers
-        pubDepthImage_ = nhRos->create_publisher<sensor_msgs::msg::Image>(srvParams.getParameter<std::string>("depth_image_raw_topic_name"), 1);
-        pubDepthColorized_ = nhRos->create_publisher<sensor_msgs::msg::Image>(srvParams.getParameter<std::string>("depth_image_colorized_topic_name"), 1);
+        pubDepthImage_ = nhRos->create_publisher<sensor_msgs::msg::Image>(srvParams.getParameter<std::string>("depth_image_raw_topic_name"), 5);
+        pubDepthColorized_ = nhRos->create_publisher<sensor_msgs::msg::Image>(srvParams.getParameter<std::string>("depth_image_colorized_topic_name"), 5);
                 
         // Initialize semantic segmentation publishers
-        pubSemanticSegmentation_ = nhRos->create_publisher<sensor_msgs::msg::Image>(srvParams.getParameter<std::string>("semantic_segmentation_topic_name"), 1);
+        pubSemanticSegmentation_ = nhRos->create_publisher<sensor_msgs::msg::Image>(srvParams.getParameter<std::string>("semantic_segmentation_topic_name"), 5);
     }
 
     ServerEnhancedImagingWorker::~ServerEnhancedImagingWorker()
@@ -1304,14 +1340,21 @@ namespace slamware_ros_sdk {
         }
 
         RemoteEnhancedImagingFrame depthFrame;
-        
-        // Early return if no frame available
-        if (!auroraSDK->enhancedImaging.waitDepthCameraNextFrame(1000)) {
-            return;
-        }
-        
+             
         // Early return if cannot peek frame
-        if (!auroraSDK->enhancedImaging.peekDepthCameraFrame(depthFrame, SLAMTEC_AURORA_SDK_DEPTHCAM_FRAME_TYPE_DEPTH_MAP)) {
+        if (auroraSDK->enhancedImaging.peekDepthCameraFrame(depthFrame, SLAMTEC_AURORA_SDK_DEPTHCAM_FRAME_TYPE_DEPTH_MAP)) 
+        {
+            if(depthFrame.desc.timestamp_ns>depth_lastTimestamp_)
+            {
+                depth_lastTimestamp_ = depthFrame.desc.timestamp_ns;
+            }
+            else
+            {
+                return;
+            }
+        }
+        else
+        {
             return;
         }
         
@@ -1341,13 +1384,20 @@ namespace slamware_ros_sdk {
 
         RemoteEnhancedImagingFrame segFrame;
         
-        // Early return if no frame available
-        if (!auroraSDK->enhancedImaging.waitSemanticSegmentationNextFrame(1000)) {
-            return;
+        //filter outdate frame
+        if (auroraSDK->enhancedImaging.peekSemanticSegmentationFrame(segFrame))
+        {
+            if(segFrame.desc.timestamp_ns>segmentation_lastTimestamp_)
+            {
+                segmentation_lastTimestamp_ = segFrame.desc.timestamp_ns;
+            }
+            else
+            {
+                return;
+            }
         }
-        
-        // Early return if cannot peek frame
-        if (!auroraSDK->enhancedImaging.peekSemanticSegmentationFrame(segFrame)) {
+        else
+        {
             return;
         }
 

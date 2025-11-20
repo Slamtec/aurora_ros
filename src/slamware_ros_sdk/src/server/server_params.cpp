@@ -43,9 +43,9 @@ namespace slamware_ros_sdk {
         this->declare_parameter<float>("map_sync_once_get_max_wh", 100.f);
         this->declare_parameter<float>("map_update_near_robot_half_wh", 8.0f);
 
-        this->declare_parameter<float>("imu_raw_data_period", 0.05f);
+        this->declare_parameter<float>("imu_raw_data_period", 0.005f);
         this->declare_parameter<float>("system_status_pub_period", 0.1f);
-        this->declare_parameter<float>("stereo_image_pub_period", 0.1f);
+        this->declare_parameter<float>("stereo_image_pub_period", 0.05f);
         this->declare_parameter<float>("point_cloud_pub_period", 0.2f);
 
         this->declare_parameter<std::string>("scan_topic", "/slamware_ros_sdk_server_node/scan");

@@ -273,7 +273,7 @@ namespace slamware_ros_sdk {
 
             {
                 auto svrWk = std::make_shared<RosConnectWorker>(this, "RosConnectWorker", sfConvFloatSecToChronoMs_(params_.getParameter<float>("robot_basic_state_pub_period")));
-                serverWorkers_.push_back(svrWk);
+               serverWorkers_.push_back(svrWk);
             }
 
             {

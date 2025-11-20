@@ -71,6 +71,7 @@ namespace slamware_ros_sdk {
 
     private:
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pubRobotPose_;
+        uint64_t lastTimestamp_;
     };
 
     //////////////////////////////////////////////////////////////////////////
@@ -240,6 +241,7 @@ namespace slamware_ros_sdk {
         // rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr pubRightKeyPoints_;
 
         rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pubStereoKeyPoints_;
+        uint64_t lastTimestamp_;
     };
 
     //////////////////////////////////////////////////////////////////////////
@@ -282,6 +284,10 @@ namespace slamware_ros_sdk {
         bool depthCameraSupported_;
         bool semanticSegmentationSupported_;
         bool isInitialized_;
+
+        //store the latest timestamp of received image
+        uint64_t depth_lastTimestamp_;
+        uint64_t segmentation_lastTimestamp_;
     };
 
     // // lef riht camera info pub
@@ -327,6 +333,9 @@ namespace slamware_ros_sdk {
     private:
         uint64_t lastTimestamp_;
         rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pubImuRawData_;
+        _Float32 acc_scale_;
+        _Float32 gyro_scale_;
+
     };
 
     class ServerPointCloudWorker : public ServerWorkerBase

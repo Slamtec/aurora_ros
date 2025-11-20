@@ -21,7 +21,7 @@
   <param name="imu_raw_data_period"      value="0.005"/>
 
   <param name= "ladar_data_clockwise"    value= "true"/>
-  <param name = "robot_pose_topic"            value = "robot_pose"/>
+  <!-- <param name = "robot_pose_topic"            value = "robot_pose"/> -->
   
   <!-- topic remap /-->
   <remap from="scan"                       to="scan"/>
