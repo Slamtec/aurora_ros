@@ -2,6 +2,7 @@
 #include <stdexcept>
 #include <cmath>
 #include <memory>
+#include <cv_bridge/cv_bridge.h>
 
 namespace slamware_ros_sdk {
 
@@ -14,6 +15,7 @@ namespace slamware_ros_sdk {
         , isStopRequested_(false)
         , relocalization_active_(false)
         , cancel_requested_(false)
+        , raw_img_listener_(nullptr)
     {
         tfBrdcstr_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
     }
@@ -151,7 +153,16 @@ namespace slamware_ros_sdk {
 
     void SlamwareRosSdkServer::connectAuroraSdk_()
     {
-        auroraSdk_ = rp::standalone::aurora::RemoteSDK::CreateSession();
+        SDKConfig config = SDKConfig();
+        if(params_.getParameter<bool>("no_preview_image"))
+            config.setCreationFlags(SLAMTEC_AURORA_SDK_SESSION_FLAG_NO_PREVIEW_IMAGE_SUBSCRIPTION);
+        if(raw_img_listener_ == nullptr)
+        {
+            raw_img_listener_ = new RawImageListener();
+            raw_img_listener_->Init(this);
+        }
+        
+        auroraSdk_ = rp::standalone::aurora::RemoteSDK::CreateSession(raw_img_listener_,config);
         if(auroraSdk_ == nullptr)
         {
             RCLCPP_ERROR(rclcpp::get_logger("slamware ros sdk server"), "Failed to create aurora sdk session.");
@@ -198,6 +209,8 @@ namespace slamware_ros_sdk {
             RCLCPP_ERROR(rclcpp::get_logger("slamware ros sdk server"), "Failed to start preview map update");
         }
         auroraSdkConnected_.store(true);
+        //start raw image stream according to config
+        auroraSdk_->controller.setRawDataSubscription(params_.getParameter<bool>("raw_image_on")); 
     }
 
     void SlamwareRosSdkServer::disconnectAuroraSdk_()
@@ -358,7 +371,8 @@ namespace slamware_ros_sdk {
             std::lock_guard<std::mutex> lkGuard(workDatLock_);
             workDat_.reset();
         }
-
+        if(raw_img_listener_ != nullptr)
+            delete raw_img_listener_;
         state_.store(ServerStateNotInit);
     }
 
@@ -752,4 +766,57 @@ namespace slamware_ros_sdk {
             // still waiting; keep background loop running
         }
     }
+    
+    void RawImageListener::Init(SlamwareRosSdkServer* ros_sdk_server){
+        auto& srvParams = ros_sdk_server->serverParams_();
+        pubLeftRawImage_ = ros_sdk_server->create_publisher<sensor_msgs::msg::Image>(srvParams.getParameter<std::string>("left_image_raw_topic_name"), 5);
+        pubRightRawImage_ = ros_sdk_server->create_publisher<sensor_msgs::msg::Image>(srvParams.getParameter<std::string>("right_image_raw_topic_name"), 5); 
+        CameraFrameLeftId = srvParams.getParameter<std::string>("camera_left");
+        CameraFrameRightId = srvParams.getParameter<std::string>("camera_right");
+           
+
+    }
+
+    void RawImageListener::onRawCamImageData(uint64_t timestamp_ns, const RemoteImageRef& left, const RemoteImageRef& right){
+        cv::Mat rawFrameL,rawFrameR;
+        left.toMat(rawFrameL);
+        right.toMat(rawFrameR);
+        if(!rawFrameL.empty()) 
+        {
+            if(rawFrameL.channels()==3)
+                cv::cvtColor(rawFrameL, rawFrameL, cv::COLOR_BGR2RGB);
+            else if(rawFrameL.channels()==1)
+                cv::cvtColor(rawFrameL, rawFrameL, cv::COLOR_GRAY2RGB);
+            else
+                return;
+            std_msgs::msg::Header header_left;
+            cv_bridge::CvImage img_bridge_left;
+            header_left.frame_id = CameraFrameLeftId;
+            header_left.stamp = rclcpp::Clock().now();
+            img_bridge_left = cv_bridge::CvImage(header_left, sensor_msgs::image_encodings::RGB8, rawFrameL);
+            sensor_msgs::msg::Image leftImage;
+            img_bridge_left.toImageMsg(leftImage);
+            pubLeftRawImage_->publish(leftImage);
+                
+        }
+        if(!rawFrameR.empty())
+        {
+            if(rawFrameR.channels()==3)
+                cv::cvtColor(rawFrameR, rawFrameR, cv::COLOR_BGR2RGB);
+            else if(rawFrameR.channels()==1)
+                cv::cvtColor(rawFrameR, rawFrameR, cv::COLOR_GRAY2RGB);
+            else
+                return;
+            std_msgs::msg::Header header_right;
+            cv_bridge::CvImage img_bridge_right;
+            header_right.frame_id = CameraFrameRightId;
+            header_right.stamp = rclcpp::Clock().now();
+            img_bridge_right = cv_bridge::CvImage(header_right, sensor_msgs::image_encodings::RGB8, rawFrameR);
+            sensor_msgs::msg::Image rightImage;
+            img_bridge_right.toImageMsg(rightImage);
+            pubRightRawImage_->publish(rightImage);
+        }
+
+    }
+
 }

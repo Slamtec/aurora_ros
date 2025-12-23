@@ -66,6 +66,11 @@ namespace slamware_ros_sdk {
         this->declare_parameter<std::string>("semantic_segmentation_topic_name", "/slamware_ros_sdk_server_node/semantic_segmentation");
 
         this->declare_parameter<std::string>("imu_raw_data_topic", "/slamware_ros_sdk_server_node/imu_raw_data");
+
+        // false: enable compressed image stream, true: disable this stream to save cpu cost
+        this->declare_parameter<bool>("no_preview_image", false); 
+        //false: disable raw image stream, true: enable raw image stream,please make sure the network bandwidth is no less than 300mbps
+        this->declare_parameter<bool>("raw_image_on", false); 
     }
 
     void ServerParams::setBy(const std::shared_ptr<rclcpp::Node> nhRos)
@@ -195,6 +200,12 @@ namespace slamware_ros_sdk {
         }
         if (nhRos->has_parameter("imu_raw_data_period")) {
             nhRos->declare_parameter<float>("imu_raw_data_period", fVal);
+        }
+        if (nhRos->has_parameter("no_preview_image")) {
+            nhRos->declare_parameter<bool>("imu_raw_data_period", bVal);
+        }
+        if (nhRos->has_parameter("raw_image_on")) {
+            nhRos->declare_parameter<bool>("raw_image_on", bVal);
         }
     }
 

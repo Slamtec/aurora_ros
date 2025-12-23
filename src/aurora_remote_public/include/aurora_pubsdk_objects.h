@@ -40,6 +40,115 @@ typedef void* slamtec_aurora_sdk_mapstorage_session_handle_t;
  */
 typedef void* slamtec_aurora_sdk_occupancy_grid_2d_handle_t;
 
+/**
+ * @brief The config entry list handle type
+ * @ingroup SDK_Basic_Data_Types SDK Basic Data Types
+ * @details The config entry list handle is used to access a list of config entry filter paths.
+ */
+typedef void* slamtec_aurora_sdk_config_entry_list_t;
+
+/**
+ * @brief The config data handle type
+ * @ingroup SDK_Basic_Data_Types SDK Basic Data Types
+ * @details The config data handle is used to access config data in JSON format.
+ */
+typedef void* slamtec_aurora_sdk_config_data_t;
+
+/**
+ * @brief The transform manager instance handle type
+ * @ingroup SDK_Basic_Data_Types SDK Basic Data Types
+ * @details The transform manager instance handle is used to manage configurable transforms.
+ */
+typedef void* slamtec_aurora_sdk_transform_manager_t;
+
+/**
+ * @brief The transform name list handle type
+ * @ingroup SDK_Basic_Data_Types SDK Basic Data Types
+ * @details The transform name list handle is used to access a list of transform names.
+ */
+typedef void* slamtec_aurora_sdk_transform_name_list_t;
+
+/**
+ * @brief The camera mask instance handle type
+ * @ingroup SDK_Basic_Data_Types SDK Basic Data Types
+ * @details The camera mask instance handle is used to manage camera input masks.
+ */
+typedef void* slamtec_aurora_sdk_camera_mask_t;
+
+/**
+ * @brief The camera mask image buffer structure
+ * @ingroup SDK_Basic_Data_Types SDK Basic Data Types
+ * @details Used to hold camera mask image data retrieved from or sent to the device.
+ */
+typedef struct _slamtec_aurora_sdk_camera_mask_image_buffer_t {
+    void* image_data;
+    size_t image_data_size;
+} slamtec_aurora_sdk_camera_mask_image_buffer_t;
+
+/**
+ * @brief Dashcam recorder working state
+ * @ingroup SDK_Basic_Data_Types SDK Basic Data Types
+ */
+typedef enum {
+    SLAMTEC_AURORA_SDK_DASHCAM_STATE_UNKNOWN = 0,
+    SLAMTEC_AURORA_SDK_DASHCAM_STATE_INITIALIZING = 1,
+    SLAMTEC_AURORA_SDK_DASHCAM_STATE_READY = 2,
+    SLAMTEC_AURORA_SDK_DASHCAM_STATE_RECORDING = 3,
+    SLAMTEC_AURORA_SDK_DASHCAM_STATE_ERROR_INIT = 4,
+    SLAMTEC_AURORA_SDK_DASHCAM_STATE_ERROR_STORAGE_FULL = 5,
+    SLAMTEC_AURORA_SDK_DASHCAM_STATE_ERROR_WRITE_FAILED = 6
+} slamtec_aurora_sdk_dashcam_working_state_t;
+
+/**
+ * @brief Dashcam recorder status structure
+ * @ingroup SDK_Basic_Data_Types SDK Basic Data Types
+ */
+typedef struct _slamtec_aurora_sdk_dashcam_status_t {
+    int enabled;                                        /**< Whether recording is enabled */
+    int recording;                                      /**< Whether currently recording */
+    float size_limit_gb;                                /**< Size limit in GB */
+    uint64_t current_size_bytes;                        /**< Current total size in bytes */
+    slamtec_aurora_sdk_dashcam_working_state_t working_state; /**< Current working state */
+    char working_message[256];                          /**< Status message */
+    uint64_t working_timestamp;                         /**< Last status update timestamp (microseconds) */
+} slamtec_aurora_sdk_dashcam_status_t;
+
+/**
+ * @brief Dashcam storage status structure
+ * @ingroup SDK_Basic_Data_Types SDK Basic Data Types
+ */
+typedef struct _slamtec_aurora_sdk_dashcam_storage_status_t {
+    int external_storage_present;                      /**< External storage detected */
+    int external_storage_mounted;                       /**< External storage mounted */
+    int using_external_storage;                         /**< Using external storage */
+    uint64_t total_space_bytes;                        /**< Total storage space */
+    uint64_t free_space_bytes;                         /**< Free storage space */
+    uint64_t used_by_dashcam_bytes;                    /**< Space used by dashcam */
+    uint64_t last_update_time;                         /**< Last update timestamp (microseconds) */
+} slamtec_aurora_sdk_dashcam_storage_status_t;
+
+/**
+ * @brief Dashcam session information structure
+ * @ingroup SDK_Basic_Data_Types SDK Basic Data Types
+ */
+typedef struct _slamtec_aurora_sdk_dashcam_session_info_t {
+    uint32_t session_id;                               /**< Session ID (0-999) */
+    uint64_t start_time;                               /**< Start time (microseconds) */
+    uint64_t end_time;                                 /**< End time (microseconds) */
+    uint64_t size;                                     /**< Total size in bytes */
+    uint64_t start_blob_index;                         /**< Starting blob index */
+    uint64_t end_blob_index;                           /**< Ending blob index */
+    uint64_t blob_idx_count;                           /**< Number of blobs */
+} slamtec_aurora_sdk_dashcam_session_info_t;
+
+/**
+ * @brief Dashcam storage info handle type
+ * @ingroup SDK_Basic_Data_Types SDK Basic Data Types
+ * @details Opaque handle to dashcam storage info, retrieved via slamtec_aurora_sdk_dashcam_recorder_get_storage_info().
+ *          Must be destroyed with slamtec_aurora_sdk_dashcam_storage_info_destroy() when done.
+ */
+typedef void* slamtec_aurora_sdk_dashcam_storage_info_t;
+
 
 /**
  * @brief Check if the handle is valid
@@ -85,6 +194,31 @@ typedef struct _slamtec_aurora_sdk_version_info_t
 
 
 /**
+ * @brief The session creation flags
+ * @ingroup SDK_Basic_Data_Types SDK Basic Data Types
+ * @details The session creation flags are used to configure the session behavior.
+ */
+enum slamtec_aurora_sdk_session_creation_flags {
+    /**
+     * @brief The default session creation flag
+     */
+    SLAMTEC_AURORA_SDK_SESSION_FLAG_DEFAULT = 0,
+
+    /**
+     * @brief Disable preview image subscription
+     * @details When this flag is set, the SDK will not subscribe to preview images from the device.
+     * @details This can reduce bandwidth and CPU usage when preview images are not needed.
+     */
+    SLAMTEC_AURORA_SDK_SESSION_FLAG_NO_PREVIEW_IMAGE_SUBSCRIPTION = (0x1 << 0),
+};
+
+/**
+ * @brief The session creation flags type
+ * @ingroup SDK_Basic_Data_Types SDK Basic Data Types
+ */
+typedef uint64_t slamtec_aurora_sdk_session_creation_flags_t;
+
+/**
  * @brief The session config structure
  * @ingroup SDK_Basic_Data_Types SDK Basic Data Types
  * @details The session config structure contains the session configuration.
@@ -98,10 +232,12 @@ typedef struct _slamtec_aurora_sdk_session_config_t
     uint32_t version;
 
     /**
-     * @brief The reserved field
-     * @details The reserved field must be 0.
+     * @brief The session creation flags
+     * @details The session creation flags to configure the session behavior.
+     * @details Set to SLAMTEC_AURORA_SDK_SESSION_FLAG_DEFAULT for default behavior.
+     * @details See slamtec_aurora_sdk_session_creation_flags for available flags.
      */
-    uint32_t reserved; // must be 0
+    uint64_t creation_flags;
 } slamtec_aurora_sdk_session_config_t;
 
 
@@ -369,6 +505,141 @@ typedef struct _slamtec_aurora_sdk_pose_t {
      */
     slamtec_aurora_sdk_euler_angle_t rpy;
 } slamtec_aurora_sdk_pose_t;
+
+/**
+ * @brief The pose covariance structure
+ * @ingroup SDK_Basic_Data_Types SDK Basic Data Types
+ * @details The pose covariance structure contains the raw covariance matrix of a pose estimation.
+ * @details The covariance is a 6x6 matrix in SE3 representation (rotation, translation).
+ */
+typedef struct _slamtec_aurora_sdk_pose_covariance_t {
+    /**
+     * @brief The raw 6x6 covariance matrix in column-major order
+     * @details The 6x6 covariance matrix in SE3 representation.
+     * @details The first 3x3 block is the rotation covariance, the last 3x3 block is the translation covariance.
+     * @details Matrix layout: [R(3x3), RT(3x3); TR(3x3), T(3x3)] where R is rotation and T is translation.
+     * @details The matrix is stored in column-major order, which is compatible with Eigen's default storage.
+     * @details For Eigen users, see the C++ wrapper for convenient conversion.
+     */
+    float covariance_matrix[36]; // 6x6 matrix in column-major order
+} slamtec_aurora_sdk_pose_covariance_t;
+
+/**
+ * @brief The pose covariance readable values structure
+ * @ingroup SDK_Basic_Data_Types SDK Basic Data Types
+ * @details This structure contains human-readable uncertainty metrics extracted from the covariance matrix.
+ * @details Users can convert the raw covariance matrix to this format using the conversion utility function.
+ */
+typedef struct _slamtec_aurora_sdk_pose_covariance_readable_t {
+    /**
+     * @brief The 95% confidence ellipsoid semi-axes for the position (x, y, z) in meters
+     * @details This represents the 3D uncertainty ellipsoid at 95% confidence level.
+     * @details The values are the semi-axes lengths of the ellipsoid in meters.
+     */
+    float position_ellipsoid_95_xyz[3]; // in meters
+
+    /**
+     * @brief The 95% confidence radius for the 2D position (x, y) in meters
+     * @details This represents the horizontal position uncertainty at 95% confidence level.
+     */
+    float position_radius_95_xy; // in meters
+
+    /**
+     * @brief The 1-sigma standard deviation for rotation (roll, pitch, yaw) in degrees
+     * @details This represents the orientation uncertainty at 1-sigma (≈68% confidence) for each axis.
+     */
+    float rotation_1sigma_rpy_deg[3]; // in degrees
+} slamtec_aurora_sdk_pose_covariance_readable_t;
+
+
+/**
+ * @brief The pose augmentation mode
+ * @ingroup SDK_Basic_Data_Types SDK Basic Data Types
+ * @details The pose augmentation mode defines how the pose output is generated.
+ */
+enum slamtec_aurora_sdk_pose_augmentation_mode {
+    /**
+     * @brief Visual only mode
+     * @details In this mode, only vSLAM tracking poses are output.
+     * @details No pose augmentation is performed.
+     */
+    SLAMTEC_AURORA_SDK_POSE_AUGMENTATION_MODE_VISUAL_ONLY = 0,
+
+    /**
+     * @brief IMU-Vision mixed mode
+     * @details In this mode, pose is augmented using IMU pre-integration.
+     * @details Combines vSLAM tracking poses with IMU data for higher frequency output.
+     */
+    SLAMTEC_AURORA_SDK_POSE_AUGMENTATION_MODE_IMU_VISION_MIXED = 1
+};
+
+/**
+ * @brief The pose augmentation mode value
+ * @ingroup SDK_Basic_Data_Types SDK Basic Data Types
+ */
+typedef int slamtec_aurora_sdk_pose_augmentation_mode_t;
+
+/**
+ * @brief The pose output frequency
+ * @ingroup SDK_Basic_Data_Types SDK Basic Data Types
+ * @details The pose output frequency defines the desired output rate for pose augmentation.
+ */
+enum slamtec_aurora_sdk_pose_output_frequency {
+    /**
+     * @brief Output at the highest possible frequency
+     * @details Typically matches the IMU sample rate (200Hz or higher)
+     */
+    SLAMTEC_AURORA_SDK_POSE_OUTPUT_FREQ_HIGHEST_POSSIBLE = 0,
+
+    /**
+     * @brief Output at 200 Hz
+     */
+    SLAMTEC_AURORA_SDK_POSE_OUTPUT_FREQ_200HZ = 200,
+
+    /**
+     * @brief Output at 100 Hz
+     */
+    SLAMTEC_AURORA_SDK_POSE_OUTPUT_FREQ_100HZ = 100,
+
+    /**
+     * @brief Output at 50 Hz
+     */
+    SLAMTEC_AURORA_SDK_POSE_OUTPUT_FREQ_50HZ = 50
+};
+
+/**
+ * @brief The pose output frequency value
+ * @ingroup SDK_Basic_Data_Types SDK Basic Data Types
+ */
+typedef int slamtec_aurora_sdk_pose_output_frequency_t;
+
+/**
+ * @brief The pose augmentation configuration
+ * @ingroup SDK_Basic_Data_Types SDK Basic Data Types
+ * @details Configuration parameters for pose augmentation
+ */
+typedef struct _slamtec_aurora_sdk_pose_augmentation_config_t {
+    /**
+     * @brief Desired pose output frequency
+     */
+    slamtec_aurora_sdk_pose_output_frequency_t output_frequency;
+
+    /**
+     * @brief Enable pose smoothing using exponential moving average
+     * @details Smooths the output pose to reduce high-frequency noise
+     * @details Set to non-zero to enable, 0 to disable (default: 1)
+     */
+    int enable_smoothing;
+
+    /**
+     * @brief Smoothing factor (alpha) for exponential moving average
+     * @details Range: 0.0 to 1.0
+     * @details Higher values = less smoothing (more responsive to new data)
+     * @details Lower values = more smoothing (smoother but less responsive)
+     * @details Default: 0.2 (moderate smoothing)
+     */
+    float smoothing_factor;
+} slamtec_aurora_sdk_pose_augmentation_config_t;
 
 
 /**
@@ -1588,6 +1859,18 @@ typedef void (*slamtec_aurora_sdk_on_image_data_callback_t)(void* user_data, uin
 typedef void (*slamtec_aurora_sdk_on_tracking_data_callback_t)(void* user_data, const slamtec_aurora_sdk_tracking_info_t* tracking_data, const slamtec_aurora_sdk_tracking_data_buffer_t* provided_buffer_info);
 
 /**
+ * @brief The pose augmentation result callback
+ * @ingroup SDK_Callback_Types SDK Callback Types
+ * @details The pose augmentation result callback to receive augmented pose data at higher frequency.
+ * @details This callback is invoked when pose augmentation is enabled and new augmented pose is available.
+ * @param user_data The user data to be passed to the callback
+ * @param timestamp_ns The timestamp of the augmented pose in nanoseconds
+ * @param mode The current pose augmentation mode
+ * @param pose The augmented pose in SE3 format
+ */
+typedef void (*slamtec_aurora_sdk_on_pose_augmentation_result_callback_t)(void* user_data, uint64_t timestamp_ns, slamtec_aurora_sdk_pose_augmentation_mode_t mode, const slamtec_aurora_sdk_pose_se3_t* pose);
+
+/**
  * @brief The IMU data callback
  * @ingroup SDK_Callback_Types SDK Callback Types
  * @details The IMU data callback to receive the IMU data from the device.
@@ -1661,6 +1944,16 @@ typedef void (*slamtec_aurora_sdk_on_depthcam_image_arrived_callback_t)(void* us
  */
 typedef void (*slamtec_aurora_sdk_on_semantic_segmentation_image_arrived_callback_t)(void* user_data, uint64_t timestamp_ns);
 
+/**
+ * @brief The pose covariance update callback
+ * @ingroup SDK_Callback_Types SDK Callback Types
+ * @details The pose covariance update callback to receive the pose covariance data from the device.
+ * @param user_data The user data to be passed to the callback
+ * @param timestamp_ns The timestamp of the pose covariance data
+ * @param covariance_matrix_buffer The 6x6 pose covariance matrix buffer in column-major order (36 floats), or NULL if not available
+ */
+typedef void (*slamtec_aurora_sdk_on_pose_covariance_callback_t)(void* user_data, uint64_t timestamp_ns, const float* covariance_matrix_buffer);
+
 
 /**
  * @brief The listener structure
@@ -1681,6 +1974,10 @@ typedef struct _slamtec_aurora_sdk_listener_t {
      * @brief The callback for the tracking data, set to NULL to ignore this callback
      */
     slamtec_aurora_sdk_on_tracking_data_callback_t on_tracking_data;
+    /**
+     * @brief The callback for the pose augmentation result, set to NULL to ignore this callback
+     */
+    slamtec_aurora_sdk_on_pose_augmentation_result_callback_t on_pose_augmentation_result;
     /**
      * @brief The callback for the IMU data, set to NULL to ignore this callback
      */
@@ -1721,6 +2018,10 @@ typedef struct _slamtec_aurora_sdk_listener_t {
      */
     slamtec_aurora_sdk_on_semantic_segmentation_image_arrived_callback_t on_semantic_segmentation_image_arrived;
 
+    /**
+     * @brief The callback for the pose covariance update, set to NULL to ignore this callback
+     */
+    slamtec_aurora_sdk_on_pose_covariance_callback_t on_pose_covariance;
 
 } slamtec_aurora_sdk_listener_t;
 

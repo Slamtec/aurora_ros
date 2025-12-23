@@ -38,10 +38,22 @@
 
 namespace slamware_ros_sdk
 {
+    class RawImageListener : public rp::standalone::aurora::RemoteSDKListener {
+        private:
+            friend class SlamwareRosSdkServer;
+        public:
+            void Init(SlamwareRosSdkServer* ros_sdk_server);
+            virtual void onRawCamImageData (uint64_t timestamp_ns, const RemoteImageRef& left, const RemoteImageRef& right);
+        private:
+            rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pubLeftRawImage_,pubRightRawImage_;
+            std::string CameraFrameLeftId,CameraFrameRightId;
+   };
+    
     class SlamwareRosSdkServer : public rclcpp::Node
     {
     private:
         friend class ServerWorkerBase;
+        friend class RawImageListener;
 
     public:
         SlamwareRosSdkServer();
@@ -135,6 +147,7 @@ namespace slamware_ros_sdk
 
         std::thread workThread_;
         rp::standalone::aurora::RemoteSDK *auroraSdk_;
+        RawImageListener *raw_img_listener_;
         std::mutex auroraSdkLock_;
         std::atomic_bool auroraSdkConnected_;
         std::atomic_bool relocalization_active_;

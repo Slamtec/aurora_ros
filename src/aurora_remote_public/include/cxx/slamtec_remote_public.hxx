@@ -23,6 +23,8 @@
 #include <memory>
 
 #include "slamtec_remote_objects.hxx"
+#include "config_handlers.hxx"
+#include "dashcam_recorder.hxx"
 
 
 /**
@@ -76,7 +78,12 @@
  */
 
 /**
- * @defgroup Cxx_Data_Recorder_Operations Data Recorder Operations  
+ * @defgroup Cxx_PresistentConfig_Operations Presistent Config Operations
+ * @brief The persistent configuration management classes
+ */
+
+/**
+ * @defgroup Cxx_Data_Recorder_Operations Data Recorder Operations
  * @brief The data recorder classes
  * @details The data recorder classes are used to record the data from the remote device
  */
@@ -189,6 +196,31 @@ public:
      */
     virtual void onSemanticSegmentationDataArrived(uint64_t timestamp_ns) {}
 
+    /**
+     * @brief The callback for the pose covariance update
+     * @ingroup SDK_Callback_Types SDK Callback Types
+     * @details The callback to receive the pose covariance data from the remote device
+     * @param timestamp_ns The timestamp of the pose covariance data
+     * @param covariance The pose covariance data
+     */
+    /**
+     * @brief Callback for pose covariance update
+     * @param timestamp_ns The timestamp of the pose covariance
+     * @param covariance The pose covariance object (zero-copy, references callback buffer)
+     * @note The covariance object references the callback buffer. If you need to store it beyond the callback, copy it.
+     */
+    virtual void onPoseCovariance(uint64_t timestamp_ns, const PoseCovariance& covariance) {}
+
+    /**
+     * @brief Callback for pose augmentation result
+     * @ingroup SDK_Callback_Types SDK Callback Types
+     * @details The callback to receive high-frequency augmented pose data
+     * @details This callback is invoked when pose augmentation is enabled and new augmented pose is available
+     * @param timestamp_ns The timestamp of the augmented pose in nanoseconds
+     * @param mode The current pose augmentation mode
+     * @param pose The augmented pose in SE3 format
+     */
+    virtual void onPoseAugmentationResult(uint64_t timestamp_ns, slamtec_aurora_sdk_pose_augmentation_mode_t mode, const slamtec_aurora_sdk_pose_se3_t& pose) {}
 
 private:
 
@@ -253,6 +285,22 @@ private:
         _sdk_listener_obj.on_semantic_segmentation_image_arrived = [](void* user_data, uint64_t timestamp_ns) {
             RemoteSDKListener* This = reinterpret_cast<RemoteSDKListener*>(user_data);
             This->onSemanticSegmentationDataArrived(timestamp_ns);
+        };
+
+        _sdk_listener_obj.on_pose_covariance = [](void* user_data, uint64_t timestamp_ns, const float* covariance_matrix_buffer) {
+            RemoteSDKListener* This = reinterpret_cast<RemoteSDKListener*>(user_data);
+            if (covariance_matrix_buffer) {
+                // Create a zero-copy PoseCovariance that references the external buffer
+                PoseCovariance cov(covariance_matrix_buffer);
+                This->onPoseCovariance(timestamp_ns, cov);
+            }
+        };
+
+        _sdk_listener_obj.on_pose_augmentation_result = [](void* user_data, uint64_t timestamp_ns, slamtec_aurora_sdk_pose_augmentation_mode_t mode, const slamtec_aurora_sdk_pose_se3_t* pose) {
+            RemoteSDKListener* This = reinterpret_cast<RemoteSDKListener*>(user_data);
+            if (pose) {
+                This->onPoseAugmentationResult(timestamp_ns, mode, *pose);
+            }
         };
     }
 
@@ -371,10 +419,28 @@ protected:
  */
 class SDKConfig : public slamtec_aurora_sdk_session_config_t
 {
-    
+
 public:
     SDKConfig() : slamtec_aurora_sdk_session_config_t() {
         memset(this, 0, sizeof(slamtec_aurora_sdk_session_config_t));
+    }
+
+    /**
+     * @brief Set the creation flags
+     * @param flags The creation flags to set (use SLAMTEC_AURORA_SDK_SESSION_FLAG_* constants)
+     * @return Reference to this SDKConfig object for method chaining
+     */
+    SDKConfig& setCreationFlags(uint64_t flags) {
+        creation_flags = flags;
+        return *this;
+    }
+
+    /**
+     * @brief Get the creation flags
+     * @return The current creation flags
+     */
+    uint64_t getCreationFlags() const {
+        return creation_flags;
     }
 };
 
@@ -705,6 +771,25 @@ public:
     }
 
     /**
+     * @brief Request the remote device to perform a power operation (reboot or shutdown)
+     * @details Sends a power management command to the remote device.
+     * @details The connection will be lost after the operation is initiated.
+     * @param[in] operation The power operation to perform (SLAMTEC_AURORA_SDK_POWER_OP_REBOOT or SLAMTEC_AURORA_SDK_POWER_OP_SHUTDOWN)
+     * @param[in] timeout_ms The timeout in milliseconds, default is 5000ms
+     * @param[in] reserved Reserved parameter for future use, pass nullptr
+     * @param[in] reserved_size Reserved parameter for future use, pass 0
+     * @param[out] errcode The error code, set to nullptr if not interested
+     * @return True if the power operation request is sent and acknowledged successfully, false otherwise
+     */
+    bool requestPowerOperation(slamtec_aurora_sdk_power_operation_t operation, uint64_t timeout_ms = SLAMTEC_AURORA_SDK_REMOTE_SERVER_DEFAULT_TIMEOUT, const void* reserved = nullptr, size_t reserved_size = 0, slamtec_aurora_sdk_errorcode_t* errcode = nullptr) {
+        auto result = slamtec_aurora_sdk_controller_request_power_operation(_sdk, operation, timeout_ms, reserved, reserved_size);
+        if (errcode) {
+            *errcode = result;
+        }
+        return result == SLAMTEC_AURORA_SDK_ERRORCODE_OK;
+    }
+
+    /**
      * @brief Send a custom command to the remote device
      * @param[in] timeout_ms The timeout in milliseconds, default is 5000ms
      * @param[in] cmd The command to send
@@ -724,7 +809,104 @@ public:
         return result == SLAMTEC_AURORA_SDK_ERRORCODE_OK;
     }
 
+    /**
+     * @brief Get system configuration from the remote device
+     * @details Retrieves runtime configuration from the device (non-persistent)
+     * @param[in] filter_type The filter type to get configuration for (e.g., "recorder.dashcam")
+     * @param[out] config_data The config data object to populate
+     * @param[in] timeout_ms The timeout in milliseconds, default is 5000ms
+     * @param[out] errcode The error code, set to nullptr if not interested
+     * @return True if the configuration is retrieved successfully, false otherwise
+     */
+    bool getSystemConfig(const std::string& filter_type, ConfigData& config_data, uint64_t timeout_ms = SLAMTEC_AURORA_SDK_REMOTE_SERVER_DEFAULT_TIMEOUT, slamtec_aurora_sdk_errorcode_t* errcode = nullptr) {
+        if (!config_data.isValid()) {
+            if (errcode) {
+                *errcode = SLAMTEC_AURORA_SDK_ERRORCODE_INVALID_ARGUMENT;
+            }
+            return false;
+        }
 
+        auto result = slamtec_aurora_sdk_controller_get_system_config(_sdk, filter_type.c_str(), config_data.getHandle(), timeout_ms);
+        if (errcode) {
+            *errcode = result;
+        }
+        return result == SLAMTEC_AURORA_SDK_ERRORCODE_OK;
+    }
+
+    /**
+     * @brief Get system configuration from the remote device as JSON string
+     * @details Convenience method that returns configuration as JSON string
+     * @param[in] filter_type The filter type to get configuration for (e.g., "recorder.dashcam")
+     * @param[in] timeout_ms The timeout in milliseconds, default is 5000ms
+     * @param[out] errcode The error code, set to nullptr if not interested
+     * @return The config JSON string, empty if failed
+     */
+    std::string getSystemConfig(const std::string& filter_type, uint64_t timeout_ms = SLAMTEC_AURORA_SDK_REMOTE_SERVER_DEFAULT_TIMEOUT, slamtec_aurora_sdk_errorcode_t* errcode = nullptr) {
+        ConfigData configData;
+        if (!configData.isValid()) {
+            if (errcode) {
+                *errcode = SLAMTEC_AURORA_SDK_ERRORCODE_OP_FAILED;
+            }
+            return std::string();
+        }
+
+        if (!getSystemConfig(filter_type, configData, timeout_ms, errcode)) {
+            return std::string();
+        }
+
+        return configData.dumpToString(errcode);
+    }
+
+    /**
+     * @brief Set system configuration on the remote device
+     * @details Sets runtime configuration on the device (non-persistent)
+     * @param[in] filter_type The filter type to set configuration for (e.g., "recorder.dashcam")
+     * @param[in] key The key for merging config, use "@overwrite" to overwrite the entire config
+     * @param[in] config_data The config data object containing the configuration to set
+     * @param[in] timeout_ms The timeout in milliseconds, default is 5000ms
+     * @param[out] errcode The error code, set to nullptr if not interested
+     * @return True if the configuration is set successfully, false otherwise
+     */
+    bool setSystemConfig(const std::string& filter_type, const std::string& key, const ConfigData& config_data, uint64_t timeout_ms = SLAMTEC_AURORA_SDK_REMOTE_SERVER_DEFAULT_TIMEOUT, slamtec_aurora_sdk_errorcode_t* errcode = nullptr) {
+        if (!config_data.isValid()) {
+            if (errcode) {
+                *errcode = SLAMTEC_AURORA_SDK_ERRORCODE_INVALID_ARGUMENT;
+            }
+            return false;
+        }
+
+        auto result = slamtec_aurora_sdk_controller_set_system_config(_sdk, filter_type.c_str(), key.c_str(), config_data.getHandle(), timeout_ms);
+        if (errcode) {
+            *errcode = result;
+        }
+        return result == SLAMTEC_AURORA_SDK_ERRORCODE_OK;
+    }
+
+    /**
+     * @brief Set system configuration on the remote device with JSON string
+     * @details Convenience method to set configuration using JSON string
+     * @param[in] filter_type The filter type to set configuration for (e.g., "recorder.dashcam")
+     * @param[in] key The key for merging config, use "@overwrite" to overwrite the entire config
+     * @param[in] config_json The config in JSON string format
+     * @param[in] timeout_ms The timeout in milliseconds, default is 5000ms
+     * @param[out] errcode The error code, set to nullptr if not interested
+     * @return True if the configuration is set successfully, false otherwise
+     */
+    bool setSystemConfig(const std::string& filter_type, const std::string& key, const std::string& config_json, uint64_t timeout_ms = SLAMTEC_AURORA_SDK_REMOTE_SERVER_DEFAULT_TIMEOUT, slamtec_aurora_sdk_errorcode_t* errcode = nullptr) {
+        ConfigData configData;
+        if (!configData.isValid()) {
+            if (errcode) {
+                *errcode = SLAMTEC_AURORA_SDK_ERRORCODE_OP_FAILED;
+            }
+            return false;
+        }
+
+        if (!configData.loadFromString(config_json, errcode)) {
+            return false;
+        }
+
+        return setSystemConfig(filter_type, key, configData, timeout_ms, errcode);
+    }
 
 protected:
 
@@ -833,6 +1015,7 @@ protected:
 
     slamtec_aurora_sdk_session_handle_t _sdk;
 };
+
 
 
 
@@ -1006,6 +1189,109 @@ public:
      */
     bool peekHistoryPose(slamtec_aurora_sdk_pose_se3_t& poseOut, uint64_t timestamp_ns, bool allowInterpolation = true, uint64_t max_time_diff_ns = 1e9/2, slamtec_aurora_sdk_errorcode_t* errcode = nullptr) {
         auto result = slamtec_aurora_sdk_dataprovider_peek_history_pose(_sdk, &poseOut, timestamp_ns, allowInterpolation, max_time_diff_ns);
+        if (errcode) {
+            *errcode = result;
+        }
+        return result == SLAMTEC_AURORA_SDK_ERRORCODE_OK;
+    }
+
+    /**
+     * @brief Get the recent pose covariance
+     * @details Caller can use this function to get the recent pose covariance data.
+     * @details The pose covariance data retrieved is the cached data from the tracking frame info.
+     * @details If the covariance data is not available for more than 10 seconds, the function will return false.
+     * @details For devices with legacy firmware, the covariance data may always be invalid.
+     * @param[out] covarianceOut The covariance data
+     * @param[out] timestamp_ns_out The timestamp of the covariance data, can be nullptr if not needed
+     * @param[out] errcode The error code, set to nullptr if not interested
+     * @return True if the covariance is retrieved successfully, false otherwise
+     */
+    bool getRecentPoseCovariance(PoseCovariance& covarianceOut, uint64_t* timestamp_ns_out = nullptr, slamtec_aurora_sdk_errorcode_t* errcode = nullptr) {
+        slamtec_aurora_sdk_pose_covariance_t temp;
+        auto result = slamtec_aurora_sdk_dataprovider_get_recent_pose_covariance(_sdk, &temp, timestamp_ns_out);
+        if (result == SLAMTEC_AURORA_SDK_ERRORCODE_OK) {
+            covarianceOut = PoseCovariance(temp);
+        }
+        if (errcode) {
+            *errcode = result;
+        }
+        return result == SLAMTEC_AURORA_SDK_ERRORCODE_OK;
+    }
+
+    /**
+     * @brief Start pose augmentation
+     * @details Start the pose augmentation feature to increase pose output frequency using IMU data
+     * @details This function starts a background thread that performs IMU pre-integration to generate higher frequency pose outputs
+     * @details The pose augmentation results will be delivered through the onPoseAugmentationResult callback if registered
+     * @param mode The pose augmentation mode (VISUAL_ONLY or IMU_VISION_MIXED)
+     * @param config The pose augmentation configuration
+     * @param[out] errcode The error code, set to nullptr if not interested
+     * @return True if pose augmentation started successfully, false otherwise
+     */
+    bool startPoseAugmentation(slamtec_aurora_sdk_pose_augmentation_mode_t mode, const slamtec_aurora_sdk_pose_augmentation_config_t& config, slamtec_aurora_sdk_errorcode_t* errcode = nullptr) {
+        auto result = slamtec_aurora_sdk_dataprovider_start_pose_augmentation(_sdk, mode, &config);
+        if (errcode) {
+            *errcode = result;
+        }
+        return result == SLAMTEC_AURORA_SDK_ERRORCODE_OK;
+    }
+
+    /**
+     * @brief Stop pose augmentation
+     * @details Stop the pose augmentation feature and terminate the background thread
+     * @param[out] errcode The error code, set to nullptr if not interested
+     * @return True if pose augmentation stopped successfully, false otherwise
+     */
+    bool stopPoseAugmentation(slamtec_aurora_sdk_errorcode_t* errcode = nullptr) {
+        auto result = slamtec_aurora_sdk_dataprovider_stop_pose_augmentation(_sdk);
+        if (errcode) {
+            *errcode = result;
+        }
+        return result == SLAMTEC_AURORA_SDK_ERRORCODE_OK;
+    }
+
+    /**
+     * @brief Get the current pose augmentation mode
+     * @details Query the current pose augmentation mode
+     * @param[out] modeOut The current mode
+     * @param[out] errcode The error code, set to nullptr if not interested
+     * @return True if the mode is retrieved successfully, false otherwise
+     */
+    bool getPoseAugmentationMode(slamtec_aurora_sdk_pose_augmentation_mode_t& modeOut, slamtec_aurora_sdk_errorcode_t* errcode = nullptr) {
+        auto result = slamtec_aurora_sdk_dataprovider_get_pose_augmentation_mode(_sdk, &modeOut);
+        if (errcode) {
+            *errcode = result;
+        }
+        return result == SLAMTEC_AURORA_SDK_ERRORCODE_OK;
+    }
+
+    /**
+     * @brief Get the current pose augmentation configuration
+     * @details Query the current pose augmentation configuration
+     * @param[out] configOut The current configuration
+     * @param[out] errcode The error code, set to nullptr if not interested
+     * @return True if the configuration is retrieved successfully, false otherwise
+     */
+    bool getPoseAugmentationConfig(slamtec_aurora_sdk_pose_augmentation_config_t& configOut, slamtec_aurora_sdk_errorcode_t* errcode = nullptr) {
+        auto result = slamtec_aurora_sdk_dataprovider_get_pose_augmentation_config(_sdk, &configOut);
+        if (errcode) {
+            *errcode = result;
+        }
+        return result == SLAMTEC_AURORA_SDK_ERRORCODE_OK;
+    }
+
+    /**
+     * @brief Get the augmented pose
+     * @details Get the current augmented pose based on the pose augmentation mode
+     * @details In VISUAL_ONLY mode, this returns the same as getCurrentPoseSE3
+     * @details In IMU_VISION_MIXED mode, this returns the IMU-augmented pose at higher frequency
+     * @param[out] poseOut The augmented pose in SE3 format
+     * @param[out] timestamp_ns The timestamp, set to nullptr if not interested
+     * @param[out] errcode The error code, set to nullptr if not interested
+     * @return True if the pose is retrieved successfully, false otherwise
+     */
+    bool getAugmentedPose(slamtec_aurora_sdk_pose_se3_t& poseOut, uint64_t* timestamp_ns = nullptr, slamtec_aurora_sdk_errorcode_t* errcode = nullptr) {
+        auto result = slamtec_aurora_sdk_dataprovider_get_augmented_pose(_sdk, &poseOut, timestamp_ns);
         if (errcode) {
             *errcode = result;
         }
@@ -2133,6 +2419,8 @@ protected:
 };
 
 
+
+
 /**
  * @brief The main class for the remote SDK
  * @details Caller can use this class to create a session and access the data from the remote device
@@ -2285,6 +2573,12 @@ public:
      */
     RemoteMapManager   mapManager;
 
+    /**
+     * @brief The persistent config manager class object
+     * @details Use this object to manage persistent configuration entries on the remote device
+     * @ingroup Cxx_Config_Operations Config Operations
+     */
+    PersistentConfigManager   persistentConfig;
 
     /**
      * @brief The LIDAR 2D map builder class object
@@ -2318,6 +2612,33 @@ public:
      */
     DataRecorder<SLAMTEC_AURORA_DATARECORDER_TYPE_COLMAP_DATASET> colmapDataRecorder;
 
+    /**
+     * @brief Create a new transform manager instance
+     * @details Creates a new instance to manage configurable transforms. The caller is responsible for deleting the returned object.
+     * @ingroup Cxx_TransformManager_Operations Transform Manager Operations
+     * @return Pointer to the new TransformManager instance, nullptr if failed
+     */
+    TransformManager* createTransformManager() {
+        return new TransformManager(handle);
+    }
+
+    /**
+     * @brief Create a new camera mask manager instance
+     * @details Creates a new instance to manage camera input masks. The caller is responsible for deleting the returned object.
+     * @ingroup Cxx_CameraMask_Operations Camera Mask Operations
+     * @return Pointer to the new CameraMaskManager instance, nullptr if failed
+     */
+    CameraMaskManager* createCameraMaskManager() {
+        return new CameraMaskManager(handle);
+    }
+
+    /**
+     * @brief The dashcam recorder manager singleton object
+     * @details Use this object to manage dashcam recorder settings and sessions
+     * @ingroup Cxx_DashcamRecorder_Operations Dashcam Recorder Operations
+     */
+    DashcamRecorderManager dashcamRecorder;
+
 protected:
 
 
@@ -2329,15 +2650,20 @@ protected:
         , dataProvider(obj)
         , controller(obj)
         , mapManager(obj)
+        , persistentConfig(obj)
         , lidar2DMapBuilder(obj)
         , floorDetector(obj)
         , enhancedImaging(obj)
         , rawDataRecorder(obj)
         , colmapDataRecorder(obj)
+        , dashcamRecorder(obj)
     {}
 
 
 };
+
+// Include time synchronization utility wrapper
+#include "slamtec_remote_timesync.hxx"
 
 }}} // namespace rp::standalone::aurora
 

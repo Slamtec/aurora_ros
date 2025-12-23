@@ -22,6 +22,8 @@
 
   <param name= "ladar_data_clockwise"    value= "true"/>
   <!-- <param name = "robot_pose_topic"            value = "robot_pose"/> -->
+  <param name="no_preview_image"  value="false"/>
+  <param name="raw_image_on"  value="false"/>
   
   <!-- topic remap /-->
   <remap from="scan"                       to="scan"/>
