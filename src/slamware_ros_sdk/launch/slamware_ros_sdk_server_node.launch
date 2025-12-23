@@ -23,6 +23,10 @@
 
     <param name="ladar_data_clockwise"     value="true"/>
     <param name="robot_pose_topic"         value="robot_pose"/>
+    <!-- default to enable compressed image stream -->
+    <param name="no_preview_image"         value="false"/>
+    <!-- default to disable raw image stream. be careful to turn it on,make sure there is enough network bandwidth(>=300mbps)  -->
+    <param name="raw_image_on"            value="false"/>
 
     <!-- Topic 重映射 -->
     <remap from="scan"                       to="scan"/>
@@ -32,14 +36,14 @@
   </node>
 
   <!-- 静态 TF 变换 -->
-  <node pkg="tf" type="static_transform_publisher" name="odom2map" 
-        args="0 0 0 0 0 0 1 slamware_map odom 20"/>
-  <node pkg="tf" type="static_transform_publisher" name="laser2base" 
-        args="0 0 0.0315 0 0 0 1 base_link laser 20"/>
-  <node pkg="tf" type="static_transform_publisher" name="leftcam2base" 
-        args="0.0418 0.03 0 -0.5 0.5 -0.5 0.5 base_link camera_left 100"/>
-  <node pkg="tf" type="static_transform_publisher" name="rightcam2Leftcam" 
-        args="0.06 0 0 0 0 0 1 camera_left camera_right 100"/>
-  <node pkg="tf" type="static_transform_publisher" name="imu2Leftcam" 
-        args="0.03 0 0 0 0 -0.7071068 0.7071068 camera_left imu_link 100"/>
+  <node pkg="tf2_ros" type="static_transform_publisher" name="odom2map" 
+        args="0 0 0 0 0 0 1 slamware_map odom"/>
+  <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="laser2base" 
+        args="0 0 0.0315 0 0 0 1 base_link laser"/> -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="leftcam2base" 
+        args="0.0418 0.03 0 -0.5 0.5 -0.5 0.5 base_link camera_left"/>
+  <node pkg="tf2_ros" type="static_transform_publisher" name="rightcam2Leftcam" 
+        args="0.06 0 0 0 0 0 1 camera_left camera_right"/>
+  <node pkg="tf2_ros" type="static_transform_publisher" name="imu2Leftcam" 
+        args="0.03 0 0 0 0 -0.7071068 0.7071068 camera_left imu_link"/>
 </launch>

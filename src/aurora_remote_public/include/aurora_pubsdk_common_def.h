@@ -80,7 +80,17 @@ enum slamtec_aurora_sdk_errorcode_types {
     SLAMTEC_AURORA_SDK_ERRORCODE_TIMEOUT = -5,
     SLAMTEC_AURORA_SDK_ERRORCODE_IO_ERROR = -6,
     SLAMTEC_AURORA_SDK_ERRORCODE_NOT_READY = -7,
+    SLAMTEC_AURORA_SDK_ERRORCODE_INSUFFICIENT_BUFFER = -8,
 };
+
+/**
+ * @brief The power operation types for system management
+ * @ingroup SDK_Basic_Data_Types Common Definitions
+ */
+typedef enum slamtec_aurora_sdk_power_operation {
+    SLAMTEC_AURORA_SDK_POWER_OP_REBOOT = 0,   /**< Reboot the device */
+    SLAMTEC_AURORA_SDK_POWER_OP_SHUTDOWN = 1, /**< Shutdown the device */
+} slamtec_aurora_sdk_power_operation_t;
 
 
 

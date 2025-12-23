@@ -18,7 +18,6 @@ namespace slamware_ros_sdk
 {
 
     //////////////////////////////////////////////////////////////////////////
-
     ServerRobotDeviceInfoWorker::ServerRobotDeviceInfoWorker(
         SlamwareRosSdkServer *pRosSdkServer,
         const std::string &wkName,
@@ -104,16 +103,16 @@ namespace slamware_ros_sdk
         //  vslam_pose.getRotation().z(), vslam_pose.getRotation().w());
 
         // publish robot_pose transform
-        geometry_msgs::TransformStamped t;
-        t.header.stamp = ros::Time::now();
-        t.header.frame_id = srvParams.map_frame;
-        t.child_frame_id = srvParams.robot_frame;
+        // geometry_msgs::TransformStamped t;
+        // t.header.stamp = ros::Time::now();
+        // t.header.frame_id = srvParams.map_frame;
+        // t.child_frame_id = srvParams.robot_frame;
 
-        t.transform.translation.x = wkDat->robotPose.pose.position.x;
-        t.transform.translation.y = wkDat->robotPose.pose.position.y;
-        t.transform.translation.z = wkDat->robotPose.pose.position.z;
-        t.transform.rotation = wkDat->robotPose.pose.orientation;
-        tfBrdcst.sendTransform(t);
+        // t.transform.translation.x = wkDat->robotPose.pose.position.x;
+        // t.transform.translation.y = wkDat->robotPose.pose.position.y;
+        // t.transform.translation.z = wkDat->robotPose.pose.position.z;
+        // t.transform.rotation = wkDat->robotPose.pose.orientation;
+        // tfBrdcst.sendTransform(t);
 
         geometry_msgs::PoseStamped ros_pose;
         ros_pose.header.frame_id = srvParams.map_frame;
@@ -161,7 +160,6 @@ namespace slamware_ros_sdk
     {
         const auto &srvParams = serverParams();
         ros::Time currentTime = ros::Time::now();
-        ;
         auto wkDat = mutableWorkData();
         const auto &currentPoseStamped = wkDat->robotPose;
 
@@ -526,7 +524,7 @@ namespace slamware_ros_sdk
         rp::standalone::aurora::SingleLayerLIDARScan scan;
         slamtec_aurora_sdk_pose_se3_t poseSE3;
         startScanTime = ros::Time::now();
-        if (!aurora->dataProvider.peekRecentLIDARScanSingleLayer(scan, poseSE3, true))
+        if (!aurora->dataProvider.peekRecentLIDARScanSingleLayer(scan, poseSE3, false))
         {
             return;
         }
@@ -567,6 +565,20 @@ namespace slamware_ros_sdk
         msgScan.time_increment = dblScanDur / (double)(msgScan.ranges.size() - 1);
 
         pubLaserScan_.publish(msgScan);
+
+        geometry_msgs::TransformStamped t;
+        t.header.stamp = msgScan.header.stamp;
+        t.header.frame_id = srvParams.map_frame;
+        t.child_frame_id = srvParams.laser_frame;
+
+        t.transform.translation.x = poseSE3.translation.x;
+        t.transform.translation.y =  poseSE3.translation.y;
+        t.transform.translation.z =  poseSE3.translation.z;
+        t.transform.rotation.x = poseSE3.quaternion.x;
+        t.transform.rotation.y = poseSE3.quaternion.y;
+        t.transform.rotation.z = poseSE3.quaternion.z;
+        t.transform.rotation.w = poseSE3.quaternion.w;
+        tfBrdcst.sendTransform(t);
     }
 
     void ServerLaserScanWorker::fillRangeMinMaxInMsg_(
@@ -1097,7 +1109,7 @@ namespace slamware_ros_sdk
        {
             return;
        }
-
+        
         cv::Mat left, right;
         trackingFrame.leftImage.toMat(left);
         trackingFrame.rightImage.toMat(right);
@@ -1116,31 +1128,36 @@ namespace slamware_ros_sdk
             return;
         const auto &srvParams = serverParams();
         // Get left and right images from the Aurora SDK
-        std_msgs::Header header_left;
-        cv_bridge::CvImage img_bridge_left;
-        header_left.frame_id = srvParams.camera_left;
-        header_left.stamp = ros::Time::now();
-        img_bridge_left = cv_bridge::CvImage(header_left, sensor_msgs::image_encodings::RGB8, left);
-        sensor_msgs::Image leftImage;
-        img_bridge_left.toImageMsg(leftImage);
-        pubLeftImage_.publish(leftImage);
-
+     
+        if(!srvParams.raw_image_on)
+        {
+            std_msgs::Header header_left;
+            cv_bridge::CvImage img_bridge_left;
+            header_left.frame_id = srvParams.camera_left;
+            header_left.stamp = ros::Time::now();
+            img_bridge_left = cv_bridge::CvImage(header_left, sensor_msgs::image_encodings::RGB8, left);
+            sensor_msgs::Image leftImage;
+            img_bridge_left.toImageMsg(leftImage);
+            pubLeftImage_.publish(leftImage);
+        }
         if(right.channels()==3)
             cv::cvtColor(right, right, cv::COLOR_BGR2RGB);
         else if(right.channels()==1)
             cv::cvtColor(right, right, cv::COLOR_GRAY2RGB);
         else
             return;
-
-        std_msgs::Header header_right;
-        cv_bridge::CvImage img_bridge_right;
-        header_right.frame_id = srvParams.camera_right;
-        header_right.stamp = ros::Time::now();
-        img_bridge_right = cv_bridge::CvImage(header_right, sensor_msgs::image_encodings::RGB8, right);
-        sensor_msgs::Image rightImage;
-        img_bridge_right.toImageMsg(rightImage);
-        pubRightImage_.publish(rightImage);
-
+        
+        if(!srvParams.raw_image_on)
+        {
+            std_msgs::Header header_right;
+            cv_bridge::CvImage img_bridge_right;
+            header_right.frame_id = srvParams.camera_right;
+            header_right.stamp = ros::Time::now();
+            img_bridge_right = cv_bridge::CvImage(header_right, sensor_msgs::image_encodings::RGB8, right);
+            sensor_msgs::Image rightImage;
+            img_bridge_right.toImageMsg(rightImage);
+            pubRightImage_.publish(rightImage);
+        }
         // Get left and right keypoints from the Aurora SDK
         for (size_t i = 0; i < trackingFrame.getKeypointsLeftCount(); i++)
         {
@@ -1161,7 +1178,7 @@ namespace slamware_ros_sdk
         cv_bridge::CvImage img_bridge_stereo;
         header_stereo_keypoints.frame_id = srvParams.camera_left;
         header_stereo_keypoints.stamp = ros::Time::now();
-        img_bridge_stereo = cv_bridge::CvImage(header_right, sensor_msgs::image_encodings::RGB8, merged);
+        img_bridge_stereo = cv_bridge::CvImage(header_stereo_keypoints, sensor_msgs::image_encodings::RGB8, merged);
         sensor_msgs::Image mergeImage;
         img_bridge_stereo.toImageMsg(mergeImage);
         pubStereoKeyPoints_.publish(mergeImage);
@@ -1547,4 +1564,32 @@ namespace slamware_ros_sdk
             classColors_[i] = cv::Vec3b(dis(gen), dis(gen), dis(gen));
         }
     }
+
+    ServerRawImageWorker::ServerRawImageWorker(
+        SlamwareRosSdkServer *pRosSdkServer,
+        const std::string &wkName,
+        const std::chrono::milliseconds &triggerInterval)
+        : super_t(pRosSdkServer, wkName, triggerInterval),lastTimestamp_(0)
+    {
+        const auto &srvParams = serverParams();
+        auto nhRos = rosNodeHandle();
+        pubLeftImage_ = nhRos.advertise<sensor_msgs::Image>(srvParams.left_image_raw_topic_name, 1);
+        pubRightImage_ = nhRos.advertise<sensor_msgs::Image>(srvParams.right_image_raw_topic_name, 1);
+    }
+
+    ServerRawImageWorker::~ServerRawImageWorker()
+    {
+    }
+
+    bool ServerRawImageWorker::reinitWorkLoop()
+    {
+        // Reinitialize the work loop if necessary
+        return true;
+    }
+    void ServerRawImageWorker::doPerform()
+    {
+        
+    }
+
+
 }
