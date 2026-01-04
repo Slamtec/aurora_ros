@@ -472,7 +472,7 @@ namespace slamware_ros_sdk {
         rp::standalone::aurora::SingleLayerLIDARScan scan;
         slamtec_aurora_sdk_pose_se3_t poseSE3;
         startScanTime = rclcpp::Clock().now();
-        if(!aurora->dataProvider.peekRecentLIDARScanSingleLayer(scan, poseSE3, true)) {
+        if(!aurora->dataProvider.peekRecentLIDARScanSingleLayer(scan, poseSE3, false)) {
             return;
         }
         endScanTime = rclcpp::Clock().now();
@@ -511,6 +511,19 @@ namespace slamware_ros_sdk {
         msgScan.time_increment = dblScanDur / (double)(msgScan.ranges.size() - 1);
 
         pubLaserScan_->publish(msgScan);
+
+        geometry_msgs::msg::TransformStamped LaserTrans;
+        LaserTrans.header.stamp = msgScan.header.stamp;
+        LaserTrans.header.frame_id = srvParams.getParameter<std::string>("map_frame");
+        LaserTrans.child_frame_id = srvParams.getParameter<std::string>("laser_frame");
+        LaserTrans.transform.translation.x = poseSE3.translation.x;
+        LaserTrans.transform.translation.y = poseSE3.translation.y;
+        LaserTrans.transform.translation.z = poseSE3.translation.z;
+        LaserTrans.transform.rotation.x = poseSE3.quaternion.x;
+        LaserTrans.transform.rotation.y = poseSE3.quaternion.y;
+        LaserTrans.transform.rotation.z = poseSE3.quaternion.z;
+        LaserTrans.transform.rotation.w = poseSE3.quaternion.w;
+        tfBrdcst->sendTransform(LaserTrans);
     }
 
     void ServerLaserScanWorker::fillRangeMinMaxInMsg_(const std::vector<slamtec_aurora_sdk_lidar_scan_point_t> & laserPoints
@@ -956,13 +969,17 @@ namespace slamware_ros_sdk {
             return;
         const auto& srvParams = serverParams();
         // Get left and right images from the Aurora SDK
-        std_msgs::msg::Header header_left;
-        cv_bridge::CvImage img_bridge_left;
-        header_left.frame_id = srvParams.getParameter<std::string>("camera_left");
-        header_left.stamp = rclcpp::Clock().now();
-        img_bridge_left = cv_bridge::CvImage(header_left, sensor_msgs::image_encodings::RGB8, left);
-        sensor_msgs::msg::Image::SharedPtr leftImage = img_bridge_left.toImageMsg();
-        pubLeftImage_->publish(*leftImage);
+        if(!srvParams.getParameter<bool>("raw_image_on"))
+        {
+            std_msgs::msg::Header header_left;
+            cv_bridge::CvImage img_bridge_left;
+            header_left.frame_id = srvParams.getParameter<std::string>("camera_left");
+            header_left.stamp = rclcpp::Clock().now();
+            img_bridge_left = cv_bridge::CvImage(header_left, sensor_msgs::image_encodings::RGB8, left);
+            sensor_msgs::msg::Image::SharedPtr leftImage = img_bridge_left.toImageMsg();
+            pubLeftImage_->publish(*leftImage);
+        }
+       
 
         if(right.channels()==3)
             cv::cvtColor(right, right, cv::COLOR_BGR2RGB);
@@ -970,14 +987,19 @@ namespace slamware_ros_sdk {
             cv::cvtColor(right, right, cv::COLOR_GRAY2RGB);
         else
             return;
-        std_msgs::msg::Header header_right;
-        cv_bridge::CvImage img_bridge_right;
-        header_right.frame_id = srvParams.getParameter<std::string>("camera_right");
-        header_right.stamp = rclcpp::Clock().now();
-        img_bridge_right = cv_bridge::CvImage(header_right, sensor_msgs::image_encodings::RGB8, right);
-        sensor_msgs::msg::Image::SharedPtr rightImage = img_bridge_right.toImageMsg();
-        // sensor_msgs::msg::Image::SharedPtr rightImage = img_bridge_left.toImageMsg();
-        pubRightImage_->publish(*rightImage);
+           
+        if(!srvParams.getParameter<bool>("raw_image_on"))
+        {
+            std_msgs::msg::Header header_right;
+            cv_bridge::CvImage img_bridge_right;
+            header_right.frame_id = srvParams.getParameter<std::string>("camera_right");
+            header_right.stamp = rclcpp::Clock().now();
+            img_bridge_right = cv_bridge::CvImage(header_right, sensor_msgs::image_encodings::RGB8, right);
+            sensor_msgs::msg::Image::SharedPtr rightImage = img_bridge_right.toImageMsg();
+            // sensor_msgs::msg::Image::SharedPtr rightImage = img_bridge_left.toImageMsg();
+            pubRightImage_->publish(*rightImage);
+        }
+
 
         // Get left and right keypoints from the Aurora SDK
         for (size_t i = 0; i < trackingFrame.getKeypointsLeftCount(); i++)
@@ -999,7 +1021,7 @@ namespace slamware_ros_sdk {
         cv_bridge::CvImage img_bridge_stereo;
         header_stereo_keypoints.frame_id = srvParams.getParameter<std::string>("camera_left");
         header_stereo_keypoints.stamp = rclcpp::Clock().now();
-        img_bridge_stereo = cv_bridge::CvImage(header_right, sensor_msgs::image_encodings::RGB8, merged);
+        img_bridge_stereo = cv_bridge::CvImage(header_stereo_keypoints, sensor_msgs::image_encodings::RGB8, merged);
         sensor_msgs::msg::Image::SharedPtr mergeImage = img_bridge_stereo.toImageMsg();
         pubStereoKeyPoints_->publish(*mergeImage);
     }

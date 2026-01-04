@@ -13,6 +13,7 @@
 #include <type_traits>
 #include <sstream>
 #include <optional>
+#include <array>
 
 #pragma once
 
@@ -20,7 +21,17 @@ namespace cv {
     class Mat; // in case of opencv
 }
 
-namespace rp { namespace standalone { namespace aurora { 
+namespace rp { namespace standalone { namespace aurora {
+
+// Type trait to detect Eigen Matrix types
+template<typename T>
+struct is_eigen_matrix : std::false_type {};
+
+// Specialization will be provided when Eigen is included
+#ifdef EIGEN_WORLD_VERSION
+template<typename Scalar, int Rows, int Cols, int Options, int MaxRows, int MaxCols>
+struct is_eigen_matrix<Eigen::Matrix<Scalar, Rows, Cols, Options, MaxRows, MaxCols>> : std::true_type {};
+#endif 
 
 
 class Noncopyable {
@@ -895,6 +906,175 @@ protected:
 
 
 /**
+ * @brief The camera mask image class wraps the camera mask image data
+ * @details This class is used to wrap the camera mask image data with RAII semantics
+ * @ingroup Cxx_CameraMask_Operations Camera Mask Operations
+ */
+struct RemoteCameraMaskImage {
+
+public:
+    RemoteCameraMaskImage()
+        : image(desc, nullptr)
+    {
+        memset(&desc, 0, sizeof(slamtec_aurora_sdk_image_desc_t));
+    }
+
+    RemoteCameraMaskImage(const slamtec_aurora_sdk_image_desc_t& desc, const slamtec_aurora_sdk_camera_mask_image_buffer_t& buffer)
+        : desc(desc)
+        , image(desc, buffer.image_data)
+    {
+    }
+
+    RemoteCameraMaskImage(const slamtec_aurora_sdk_image_desc_t& info,
+        std::vector<uint8_t>&& buffer
+    )
+        : desc(info)
+        , image(info, buffer.data())
+        , _imgbuffer(std::move(buffer))
+    {
+    }
+
+    RemoteCameraMaskImage(const RemoteCameraMaskImage& other)
+        : desc(other.desc)
+        , image(desc, nullptr)
+    {
+        _copyFrom(other);
+    }
+
+    RemoteCameraMaskImage(RemoteCameraMaskImage&& other)
+        : desc(other.desc)
+        , image(desc, nullptr)
+    {
+        if (!other._isOwnBuffer()) {
+            _copyFrom(other);
+        } else {
+            _moveFrom(other);
+        }
+    }
+
+    RemoteCameraMaskImage& operator=(const RemoteCameraMaskImage& other) {
+        desc = other.desc;
+        _copyFrom(other);
+        return *this;
+    }
+
+    RemoteCameraMaskImage& operator=(RemoteCameraMaskImage&& other) {
+        desc = other.desc;
+        if (!other._isOwnBuffer()) {
+            _copyFrom(other);
+        } else {
+            _moveFrom(other);
+        }
+        return *this;
+    }
+
+    bool isValid() const {
+        return desc.width > 0 && desc.height > 0 && image._data != nullptr;
+    }
+
+public:
+    RemoteImageRef image;
+    slamtec_aurora_sdk_image_desc_t desc;
+
+
+protected:
+    bool _isOwnBuffer() const {
+        return (_imgbuffer.data() == image._data);
+    }
+
+    void _moveFrom(RemoteCameraMaskImage& other) {
+        _imgbuffer = std::move(other._imgbuffer);
+        image._data = _imgbuffer.data();
+    }
+
+    void _copyFrom(const RemoteCameraMaskImage& other) {
+        if (other.image._data) {
+            _imgbuffer.resize(other.desc.data_size);
+            memcpy(_imgbuffer.data(), other.image._data, other.desc.data_size);
+            image._data = _imgbuffer.data();
+        }
+        else {
+            image._data = nullptr;
+            _imgbuffer.clear();
+        }
+    }
+
+protected:
+    std::vector<uint8_t> _imgbuffer;
+};
+
+
+/**
+ * @brief Dashcam recorder status - C++ extension of C struct
+ * @details Inherits from C struct and adds convenience methods.
+ * @ingroup Cxx_DashcamRecorder_Operations Dashcam Recorder Operations
+ */
+struct RemoteDashcamStatus : public slamtec_aurora_sdk_dashcam_status_t {
+    RemoteDashcamStatus() {
+        memset(this, 0, sizeof(slamtec_aurora_sdk_dashcam_status_t));
+    }
+
+    RemoteDashcamStatus(const slamtec_aurora_sdk_dashcam_status_t& c_struct) {
+        memcpy(this, &c_struct, sizeof(slamtec_aurora_sdk_dashcam_status_t));
+    }
+
+    bool isEnabled() const { return enabled != 0; }
+    bool isRecording() const { return recording != 0; }
+    float getSizeLimitGB() const { return size_limit_gb; }
+    uint64_t getCurrentSizeBytes() const { return current_size_bytes; }
+    slamtec_aurora_sdk_dashcam_working_state_t getWorkingState() const { return working_state; }
+    const char* getWorkingMessage() const { return working_message; }
+    uint64_t getWorkingTimestamp() const { return working_timestamp; }
+};
+
+/**
+ * @brief Dashcam storage status - C++ extension of C struct
+ * @details Inherits from C struct and adds convenience methods.
+ * @ingroup Cxx_DashcamRecorder_Operations Dashcam Recorder Operations
+ */
+struct RemoteDashcamStorageStatus : public slamtec_aurora_sdk_dashcam_storage_status_t {
+    RemoteDashcamStorageStatus() {
+        memset(this, 0, sizeof(slamtec_aurora_sdk_dashcam_storage_status_t));
+    }
+
+    RemoteDashcamStorageStatus(const slamtec_aurora_sdk_dashcam_storage_status_t& c_struct) {
+        memcpy(this, &c_struct, sizeof(slamtec_aurora_sdk_dashcam_storage_status_t));
+    }
+
+    bool isExternalStoragePresent() const { return external_storage_present != 0; }
+    bool isExternalStorageMounted() const { return external_storage_mounted != 0; }
+    bool isUsingExternalStorage() const { return using_external_storage != 0; }
+    uint64_t getTotalSpaceBytes() const { return total_space_bytes; }
+    uint64_t getFreeSpaceBytes() const { return free_space_bytes; }
+    uint64_t getUsedByDashcamBytes() const { return used_by_dashcam_bytes; }
+    uint64_t getLastUpdateTime() const { return last_update_time; }
+};
+
+/**
+ * @brief Dashcam session info - C++ extension of C struct
+ * @details Inherits from C struct and adds convenience methods.
+ * @ingroup Cxx_DashcamRecorder_Operations Dashcam Recorder Operations
+ */
+struct RemoteDashcamSessionInfo : public slamtec_aurora_sdk_dashcam_session_info_t {
+    RemoteDashcamSessionInfo() {
+        memset(this, 0, sizeof(slamtec_aurora_sdk_dashcam_session_info_t));
+    }
+
+    RemoteDashcamSessionInfo(const slamtec_aurora_sdk_dashcam_session_info_t& c_struct) {
+        memcpy(this, &c_struct, sizeof(slamtec_aurora_sdk_dashcam_session_info_t));
+    }
+
+    uint32_t getSessionId() const { return session_id; }
+    uint64_t getStartTime() const { return start_time; }
+    uint64_t getEndTime() const { return end_time; }
+    uint64_t getSize() const { return size; }
+    uint64_t getStartBlobIndex() const { return start_blob_index; }
+    uint64_t getEndBlobIndex() const { return end_blob_index; }
+    uint64_t getBlobIdxCount() const { return blob_idx_count; }
+};
+
+
+/**
  * @brief The keyframe data class wraps the keyframe description and its data
  * @details This class is used to wrap the keyframe description and its data.
  * @ingroup Cxx_DataProvider_Operations Data Provider Operations
@@ -1114,6 +1294,213 @@ public:
      * @brief The floor detection histogram data
      */
     std::vector<float> histogramData;
+};
+
+/**
+ * @brief The pose covariance class wraps the pose covariance data
+ * @details This class provides zero-copy access to covariance matrix data.
+ * @details It can reference external buffers (zero-copy) or own its own buffer.
+ * @details When Eigen library is available, it provides conversion to Eigen::Matrix.
+ * @ingroup Cxx_Data_Types Data Types
+ */
+class PoseCovariance {
+public:
+    /**
+     * @brief Default constructor - creates with owned zero-initialized buffer
+     */
+    PoseCovariance() : _data_ptr(nullptr), _owned_buffer(36, 0.0f) {
+        _data_ptr = _owned_buffer.data();
+    }
+
+    /**
+     * @brief Construct from external buffer (zero-copy, references external data)
+     * @param external_buffer Pointer to 36 floats in column-major order
+     * @warning The external buffer must remain valid for the lifetime of this object
+     */
+    explicit PoseCovariance(const float* external_buffer) : _data_ptr(external_buffer) {
+        // No copy - just store the pointer
+    }
+
+    /**
+     * @brief Construct from C structure (copies data to owned buffer)
+     */
+    PoseCovariance(const slamtec_aurora_sdk_pose_covariance_t& c_struct)
+        : _data_ptr(nullptr), _owned_buffer(c_struct.covariance_matrix, c_struct.covariance_matrix + 36) {
+        _data_ptr = _owned_buffer.data();
+    }
+
+    /**
+     * @brief Copy constructor
+     */
+    PoseCovariance(const PoseCovariance& other) {
+        if (other._owned_buffer.empty()) {
+            // Other is using foreign buffer, copy the data to our own buffer
+            _owned_buffer.assign(other._data_ptr, other._data_ptr + 36);
+            _data_ptr = _owned_buffer.data();
+        } else {
+            // Other owns its buffer, copy it
+            _owned_buffer = other._owned_buffer;
+            _data_ptr = _owned_buffer.data();
+        }
+    }
+
+    /**
+     * @brief Assignment operator
+     */
+    PoseCovariance& operator=(const PoseCovariance& other) {
+        if (this != &other) {
+            if (other._owned_buffer.empty()) {
+                // Other is using foreign buffer, copy the data to our own buffer
+                _owned_buffer.assign(other._data_ptr, other._data_ptr + 36);
+                _data_ptr = _owned_buffer.data();
+            } else {
+                // Other owns its buffer, copy it
+                _owned_buffer = other._owned_buffer;
+                _data_ptr = _owned_buffer.data();
+            }
+        }
+        return *this;
+    }
+
+    /**
+     * @brief Assignment operator from C structure
+     * @param c_struct The C structure to assign from
+     * @return Reference to this object
+     */
+    PoseCovariance& operator=(const slamtec_aurora_sdk_pose_covariance_t& c_struct) {
+        _owned_buffer.assign(c_struct.covariance_matrix, c_struct.covariance_matrix + 36);
+        _data_ptr = _owned_buffer.data();
+        return *this;
+    }
+
+    /**
+     * @brief Conversion operator to C structure
+     * @return C structure with covariance data
+     */
+    operator slamtec_aurora_sdk_pose_covariance_t() const {
+        return toCStruct();
+    }
+
+    /**
+     * @brief Get raw pointer to covariance matrix data (36 floats, column-major)
+     */
+    const float* data() const { return _data_ptr; }
+
+    /**
+     * @brief Get element at (row, col)
+     */
+    float operator()(int row, int col) const {
+        return _data_ptr[col * 6 + row]; // column-major
+    }
+
+    /**
+     * @brief Convert to C structure (always copies data)
+     */
+    slamtec_aurora_sdk_pose_covariance_t toCStruct() const {
+        slamtec_aurora_sdk_pose_covariance_t result;
+        memcpy(result.covariance_matrix, _data_ptr, sizeof(result.covariance_matrix));
+        return result;
+    }
+
+    /**
+     * @brief Convert to Eigen::Matrix<float,6,6>
+     * @details This function is only available when Eigen library headers are included.
+     * @details The covariance matrix is stored in column-major order, compatible with Eigen's default.
+     * @param[out] mat The output Eigen matrix
+     * @return true if the conversion is successful, false otherwise
+     */
+    template <typename T>
+    typename std::enable_if<is_eigen_matrix<T>::value && std::is_same<typename T::Scalar, float>::value && T::RowsAtCompileTime == 6 && T::ColsAtCompileTime == 6, bool>::type
+    toEigenMatrix(T& mat) const {
+        memcpy(mat.data(), _data_ptr, 36 * sizeof(float));
+        return true;
+    }
+
+    /**
+     * @brief Construct from Eigen::Matrix<float,6,6>
+     * @details This function is only available when Eigen library headers are included.
+     * @param mat The 6x6 covariance matrix
+     * @return true if the conversion is successful, false otherwise
+     */
+    template <typename T>
+    typename std::enable_if<is_eigen_matrix<T>::value && std::is_same<typename T::Scalar, float>::value && T::RowsAtCompileTime == 6 && T::ColsAtCompileTime == 6, bool>::type
+    fromEigenMatrix(const T& mat) {
+        _owned_buffer.assign(mat.data(), mat.data() + 36);
+        _data_ptr = _owned_buffer.data();
+        return true;
+    }
+
+    /**
+     * @brief Convert to human-readable covariance metrics
+     * @param[out] readable_out The output readable covariance metrics
+     * @return true if the conversion is successful, false otherwise
+     */
+    bool toHumanReadable(slamtec_aurora_sdk_pose_covariance_readable_t& readable_out) const {
+        slamtec_aurora_sdk_pose_covariance_t temp = toCStruct();
+        return slamtec_aurora_sdk_convert_pose_covariance_to_readable(&temp, &readable_out) == SLAMTEC_AURORA_SDK_ERRORCODE_OK;
+    }
+
+    /**
+     * @brief Get pointer to C struct representation (for compatibility)
+     * @warning This returns a temporary - do not store the pointer!
+     * @warning Only valid for owned buffer PoseCovariance objects
+     */
+    const slamtec_aurora_sdk_pose_covariance_t* getCStructPtr() const {
+        // For compatibility with old code that expects a pointer to C struct
+        // Note: This is a workaround and should be avoided in new code
+        static thread_local slamtec_aurora_sdk_pose_covariance_t temp;
+        temp = toCStruct();
+        return &temp;
+    }
+
+private:
+    const float* _data_ptr;              // Points to either _owned_buffer or external buffer
+    std::vector<float> _owned_buffer;    // Owned buffer (empty if using foreign buffer)
+};
+
+/**
+ * @brief The pose covariance readable values class wraps the human-readable covariance metrics
+ * @details This class extends the C structure with convenient C++ features.
+ * @ingroup Cxx_Data_Types Data Types
+ */
+class PoseCovarianceReadable : public slamtec_aurora_sdk_pose_covariance_readable_t {
+public:
+    PoseCovarianceReadable() : slamtec_aurora_sdk_pose_covariance_readable_t() {
+        memset(this, 0, sizeof(slamtec_aurora_sdk_pose_covariance_readable_t));
+    }
+
+    PoseCovarianceReadable(const slamtec_aurora_sdk_pose_covariance_readable_t& other) {
+        memcpy(this, &other, sizeof(slamtec_aurora_sdk_pose_covariance_readable_t));
+    }
+
+    PoseCovarianceReadable& operator=(const slamtec_aurora_sdk_pose_covariance_readable_t& other) {
+        memcpy(this, &other, sizeof(slamtec_aurora_sdk_pose_covariance_readable_t));
+        return *this;
+    }
+
+    /**
+     * @brief Get the 95% confidence ellipsoid semi-axes for position (x, y, z) in meters
+     * @return std::array<float,3> containing [x, y, z] semi-axes
+     */
+    std::array<float,3> getPositionEllipsoid95() const {
+        return {position_ellipsoid_95_xyz[0], position_ellipsoid_95_xyz[1], position_ellipsoid_95_xyz[2]};
+    }
+
+    /**
+     * @brief Get the 95% confidence radius for 2D position (x, y) in meters
+     * @return float radius in meters
+     */
+    float getPositionRadius95XY() const {
+        return position_radius_95_xy;
+    }
+
+    /**
+     * @brief Get the 1-sigma standard deviation for rotation (roll, pitch, yaw) in degrees
+     * @return std::array<float,3> containing [roll, pitch, yaw] in degrees
+     */
+    std::array<float,3> getRotation1SigmaRPY() const {
+        return {rotation_1sigma_rpy_deg[0], rotation_1sigma_rpy_deg[1], rotation_1sigma_rpy_deg[2]};
+    }
 };
 
 
