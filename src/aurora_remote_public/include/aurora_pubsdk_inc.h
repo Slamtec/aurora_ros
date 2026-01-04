@@ -73,6 +73,11 @@ extern "C" {
 */
 
 /**
+ * @defgroup PresistentConfig_Operations Presistent Config Operations
+ * @brief Functions for managing persistent configuration settings
+ */
+
+/**
  * @defgroup Utility_Functions Utility Functions
  * @brief Utility functions
  */
@@ -118,12 +123,24 @@ void AURORA_SDK_API slamtec_aurora_sdk_release_session(slamtec_aurora_sdk_sessio
 /**
  * @brief Convert a quaternion to Euler angles in RPY order
  * @ingroup Utility_Functions Utility Functions
- * 
+ *
  * @param q - the quaternion to be converted, the quaternion must be normalized
  * @param euler_out - the Euler angles will be stored in this pointer
  * @return the error code
  */
 slamtec_aurora_sdk_errorcode_t AURORA_SDK_API slamtec_aurora_sdk_convert_quaternion_to_euler(const slamtec_aurora_sdk_quaternion_t* q, slamtec_aurora_sdk_euler_angle_t* euler_out);
+
+/**
+ * @brief Convert pose covariance to readable format
+ * @ingroup Utility_Functions Utility Functions
+ * @details This function converts the raw 6x6 covariance matrix to human-readable uncertainty metrics.
+ * @details The conversion includes computing 95% confidence ellipsoid, 2D radius, and rotation uncertainties.
+ *
+ * @param covariance - the raw covariance data
+ * @param readable_out - the readable values will be stored in this pointer
+ * @return the error code
+ */
+slamtec_aurora_sdk_errorcode_t AURORA_SDK_API slamtec_aurora_sdk_convert_pose_covariance_to_readable(const slamtec_aurora_sdk_pose_covariance_t* covariance, slamtec_aurora_sdk_pose_covariance_readable_t* readable_out);
 
 
 /**
@@ -573,13 +590,58 @@ slamtec_aurora_sdk_errorcode_t AURORA_SDK_API slamtec_aurora_sdk_controller_send
 /**
  * @brief Check if the device connection is alive
  * @ingroup Controller_Operations Controller Operations
- * 
+ *
  * @param handle - the session handle
  * @return non-zero means alive
  */
 int AURORA_SDK_API slamtec_aurora_sdk_controller_is_device_connection_alive(slamtec_aurora_sdk_session_handle_t handle);
 
 
+/**
+ * @brief Get system configuration from the remote device
+ * @ingroup Controller_Operations Controller Operations
+ *
+ * @param handle - the session handle
+ * @param filter_type - the filter type to get configuration for (e.g., "recorder.dashcam")
+ * @param config_data - the config data handle to populate (must be created by caller using slamtec_aurora_sdk_config_data_create)
+ * @param timeout_ms - the timeout in milliseconds
+ * @return the error code
+ */
+slamtec_aurora_sdk_errorcode_t AURORA_SDK_API slamtec_aurora_sdk_controller_get_system_config(slamtec_aurora_sdk_session_handle_t handle, const char* filter_type, slamtec_aurora_sdk_config_data_t config_data, uint64_t timeout_ms);
+
+/**
+ * @brief Set system configuration on the remote device
+ * @ingroup Controller_Operations Controller Operations
+ *
+ * @param handle - the session handle
+ * @param filter_type - the filter type to set configuration for (e.g., "recorder.dashcam")
+ * @param key - the key for merging config, use "@overwrite" to overwrite the entire config
+ * @param config_data - the config data handle containing the configuration to set
+ * @param timeout_ms - the timeout in milliseconds
+ * @return the error code
+ */
+slamtec_aurora_sdk_errorcode_t AURORA_SDK_API slamtec_aurora_sdk_controller_set_system_config(slamtec_aurora_sdk_session_handle_t handle, const char* filter_type, const char* key, slamtec_aurora_sdk_config_data_t config_data, uint64_t timeout_ms);
+
+
+/**
+ * @defgroup SystemManagement_Operations System Management Operations
+ * @brief Functions for managing the remote device system
+ */
+
+/**
+ * @brief Request the remote device to perform a power operation (reboot or shutdown)
+ * @ingroup SystemManagement_Operations System Management Operations
+ * @details Sends a power management command to the remote device.
+ * @details The connection will be lost after the operation is initiated.
+ *
+ * @param handle - the session handle
+ * @param operation - the power operation to perform (reboot or shutdown), see slamtec_aurora_sdk_power_operation_t
+ * @param timeout_ms - the timeout in milliseconds
+ * @param reserved - reserved parameter for future use, pass NULL
+ * @param reserved_size - reserved parameter for future use, pass 0
+ * @return the error code
+ */
+slamtec_aurora_sdk_errorcode_t AURORA_SDK_API slamtec_aurora_sdk_controller_request_power_operation(slamtec_aurora_sdk_session_handle_t handle, slamtec_aurora_sdk_power_operation_t operation, uint64_t timeout_ms, const void* reserved, size_t reserved_size);
 
 
 // map manager operations
@@ -728,7 +790,7 @@ slamtec_aurora_sdk_errorcode_t AURORA_SDK_API slamtec_aurora_sdk_dataprovider_ge
  * @details Caller can use this function to peek the history pose.
  * @details The caller should check the return code to see if the pose is available.
  * @ingroup DataProvider_Operations Data Provider Operations
- * 
+ *
  * @param handle - the session handle
  * @param pose_out - the pose will be stored in this pointer
  * @param timestamp_ns - the timestamp in nanoseconds, if set to 0, the function will return the latest pose
@@ -738,12 +800,88 @@ slamtec_aurora_sdk_errorcode_t AURORA_SDK_API slamtec_aurora_sdk_dataprovider_ge
  */
 slamtec_aurora_sdk_errorcode_t AURORA_SDK_API slamtec_aurora_sdk_dataprovider_peek_history_pose(slamtec_aurora_sdk_session_handle_t handle, slamtec_aurora_sdk_pose_se3_t* pose_out, uint64_t timestamp_ns, int allow_interpolation, uint64_t max_time_diff_ns);
 
+/**
+ * @brief Get the recent pose covariance
+ * @details Caller can use this function to get the recent pose covariance data.
+ * @details The pose covariance data retrieved is the cached data from the tracking frame info.
+ * @details If the covariance data is not available for more than 10 seconds, the function will return SLAMTEC_AURORA_SDK_ERRORCODE_NOT_READY.
+ * @details For devices with legacy firmware, the covariance data may always be invalid.
+ * @ingroup DataProvider_Operations Data Provider Operations
+ *
+ * @param handle - the session handle
+ * @param covariance_out - the covariance data will be stored in this pointer
+ * @param timestamp_ns_out - the timestamp of the covariance data will be stored in this pointer, can be NULL if not needed
+ * @return the error code
+ */
+slamtec_aurora_sdk_errorcode_t AURORA_SDK_API slamtec_aurora_sdk_dataprovider_get_recent_pose_covariance(slamtec_aurora_sdk_session_handle_t handle, slamtec_aurora_sdk_pose_covariance_t* covariance_out, uint64_t* timestamp_ns_out);
+
+
+/**
+ * @brief Start pose augmentation
+ * @details Start the pose augmentation feature to increase pose output frequency using IMU data.
+ * @details This function starts a background thread that performs IMU pre-integration to generate higher frequency pose outputs.
+ * @details The pose augmentation results will be delivered through the on_pose_augmentation_result callback if registered.
+ * @ingroup DataProvider_Operations Data Provider Operations
+ *
+ * @param handle - the session handle
+ * @param mode - the pose augmentation mode (VISUAL_ONLY or IMU_VISION_MIXED)
+ * @param config - the pose augmentation configuration
+ * @return the error code
+ */
+slamtec_aurora_sdk_errorcode_t AURORA_SDK_API slamtec_aurora_sdk_dataprovider_start_pose_augmentation(slamtec_aurora_sdk_session_handle_t handle, slamtec_aurora_sdk_pose_augmentation_mode_t mode, const slamtec_aurora_sdk_pose_augmentation_config_t* config);
+
+/**
+ * @brief Stop pose augmentation
+ * @details Stop the pose augmentation feature and terminate the background thread.
+ * @ingroup DataProvider_Operations Data Provider Operations
+ *
+ * @param handle - the session handle
+ * @return the error code
+ */
+slamtec_aurora_sdk_errorcode_t AURORA_SDK_API slamtec_aurora_sdk_dataprovider_stop_pose_augmentation(slamtec_aurora_sdk_session_handle_t handle);
+
+/**
+ * @brief Get the current pose augmentation mode
+ * @details Query the current pose augmentation mode.
+ * @ingroup DataProvider_Operations Data Provider Operations
+ *
+ * @param handle - the session handle
+ * @param mode_out - the current mode will be stored in this pointer
+ * @return the error code
+ */
+slamtec_aurora_sdk_errorcode_t AURORA_SDK_API slamtec_aurora_sdk_dataprovider_get_pose_augmentation_mode(slamtec_aurora_sdk_session_handle_t handle, slamtec_aurora_sdk_pose_augmentation_mode_t* mode_out);
+
+/**
+ * @brief Get the current pose augmentation configuration
+ * @details Query the current pose augmentation configuration.
+ * @ingroup DataProvider_Operations Data Provider Operations
+ *
+ * @param handle - the session handle
+ * @param config_out - the current configuration will be stored in this pointer
+ * @return the error code
+ */
+slamtec_aurora_sdk_errorcode_t AURORA_SDK_API slamtec_aurora_sdk_dataprovider_get_pose_augmentation_config(slamtec_aurora_sdk_session_handle_t handle, slamtec_aurora_sdk_pose_augmentation_config_t* config_out);
+
+/**
+ * @brief Get the augmented pose
+ * @details Get the current augmented pose based on the pose augmentation mode.
+ * @details In VISUAL_ONLY mode, this returns the same as get_current_pose_se3.
+ * @details In IMU_VISION_MIXED mode, this returns the IMU-augmented pose at higher frequency.
+ * @ingroup DataProvider_Operations Data Provider Operations
+ *
+ * @param handle - the session handle
+ * @param pose_out - the augmented pose will be stored in this pointer
+ * @param timestamp_ns - the timestamp will be stored in this pointer, can be NULL if not needed
+ * @return the error code
+ */
+slamtec_aurora_sdk_errorcode_t AURORA_SDK_API slamtec_aurora_sdk_dataprovider_get_augmented_pose(slamtec_aurora_sdk_session_handle_t handle, slamtec_aurora_sdk_pose_se3_t* pose_out, uint64_t* timestamp_ns);
+
 
 /**
  * @brief Get the current mapping flags
  * @details Caller can use this function to get the current SLAM working flags, e.g. whether Loop Closure is disabled or not
  * @ingroup DataProvider_Operations Data Provider Operations
- * 
+ *
  * @param handle - the session handle
  * @param flags_out - the flags will be stored in this pointer
  * @return the error code
@@ -1342,6 +1480,20 @@ slamtec_aurora_sdk_errorcode_t AURORA_SDK_API slamtec_aurora_sdk_dataprovider_se
  */
 slamtec_aurora_sdk_errorcode_t AURORA_SDK_API slamtec_aurora_sdk_dataprovider_semantic_segmentation_peek_frame(slamtec_aurora_sdk_session_handle_t handle, slamtec_aurora_sdk_enhanced_imaging_frame_desc_t* frame_desc_out, const slamtec_aurora_sdk_enhanced_imaging_frame_buffer_t* frame_buffer);
 
+
+
+
+// Configuration Handlers
+////////////////////////////////////////////////////////////////////////////////////////
+#include "aurora_pubsdk_config_handlers.h"
+
+// Dashcam Recorder
+////////////////////////////////////////////////////////////////////////////////////////
+#include "aurora_pubsdk_dashcam_recorder.h"
+
+// Time Synchronization Utility
+////////////////////////////////////////////////////////////////////////////////////////
+#include "aurora_pubsdk_timesync.h"
 
 
 #ifdef __cplusplus

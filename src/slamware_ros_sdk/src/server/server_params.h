@@ -65,6 +65,8 @@ namespace slamware_ros_sdk
         std::string semantic_segmentation_topic_name;
 
         bool raw_ladar_data;
+        bool no_preview_image;
+        bool raw_image_on;
 
         ServerParams();
 

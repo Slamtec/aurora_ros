@@ -75,6 +75,9 @@ namespace slamware_ros_sdk
         semantic_segmentation_topic_name = "/slamware_ros_sdk_server_node/semantic_segmentation";
 
         event_period = 1.0f;
+        no_preview_image = false;
+        raw_image_on = false;
+        
     }
 
     void ServerParams::setBy(const ros::NodeHandle &nhRos)
@@ -128,6 +131,9 @@ namespace slamware_ros_sdk
         nhRos.getParam("depth_image_raw_topic_name", depth_image_raw_topic_name);
         nhRos.getParam("depth_image_colorized_topic_name", depth_image_colorized_topic_name);
         nhRos.getParam("semantic_segmentation_topic_name", semantic_segmentation_topic_name);
+
+        nhRos.getParam("no_preview_image", no_preview_image);
+        nhRos.getParam("raw_image_on", raw_image_on);
     }
 
 }

@@ -1,7 +1,7 @@
 SLAMTEC Aurora
 Aurora Cpp SDK
 
-2.1.0-rtm
-2025-10-12 13:00:43
+2.1.1-rtm
+2025-12-22 14:43:54
 
 visit www.slamtec.com for more info
