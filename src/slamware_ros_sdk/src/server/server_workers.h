@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include "server_worker_base.h"
@@ -284,6 +283,7 @@ namespace slamware_ros_sdk
         // Depth camera publishers
         ros::Publisher pubDepthImage_;
         ros::Publisher pubDepthColorized_;
+        ros::Publisher pubDensePointCloud_;  // colored PointCloud2 from POINT3D frame
         
         // Semantic segmentation publishers
         ros::Publisher pubSemanticSegmentation_;

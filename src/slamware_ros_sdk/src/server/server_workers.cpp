@@ -1305,6 +1305,7 @@ namespace slamware_ros_sdk
         // Initialize depth camera publishers
         pubDepthImage_ = nhRos.advertise<sensor_msgs::Image>(srvParams.depth_image_raw_topic_name, 5);
         pubDepthColorized_ = nhRos.advertise<sensor_msgs::Image>(srvParams.depth_image_colorized_topic_name, 5);
+        pubDensePointCloud_ = nhRos.advertise<sensor_msgs::PointCloud2>("depth_camera/points", 5);
 
         // Initialize semantic segmentation publishers
         pubSemanticSegmentation_ = nhRos.advertise<sensor_msgs::Image>(srvParams.semantic_segmentation_topic_name, 5);
@@ -1388,7 +1389,7 @@ namespace slamware_ros_sdk
         auto currentTime = ros::Time::now();
         std_msgs::Header header;
         header.stamp = currentTime;
-        header.frame_id = "camera_depth_optical_frame";
+        header.frame_id = "camera_left";
 
         // Process depth camera data
         if (depthCameraSupported_)
@@ -1445,6 +1446,118 @@ namespace slamware_ros_sdk
 
         cv_bridge::CvImage depthColorizedBridge(header, sensor_msgs::image_encodings::BGR8, depthColorized);
         pubDepthColorized_.publish(depthColorizedBridge.toImageMsg());
+
+        // ----------------------------------------------------------------
+        // Dense coloured PointCloud2 from device-unprojected POINT3D frame
+        // ----------------------------------------------------------------
+        if (pubDensePointCloud_.getNumSubscribers() == 0)
+            return;
+
+        // Peek the POINT3D frame (same timestamp bucket as depthFrame)
+        RemoteEnhancedImagingFrame point3dFrame;
+        slamtec_aurora_sdk_errorcode_t errCode;
+        if (!auroraSDK->enhancedImaging.peekDepthCameraFrame(
+                point3dFrame, SLAMTEC_AURORA_SDK_DEPTHCAM_FRAME_TYPE_POINT3D, &errCode))
+        {
+            ROS_WARN_THROTTLE(5.0, "processDepthCamera: failed to peek POINT3D frame (err %d)", (int)errCode);
+            return;
+        }
+
+        cv::Mat xyzMat;  // CV_32FC3, metric XYZ in camera-0 frame, size == depth image
+        point3dFrame.image.toMat(xyzMat);
+        if (xyzMat.empty())
+            return;
+
+        // Peek the rectified left image for per-pixel colour
+        RemoteEnhancedImagingFrame textureFrame;
+        bool hasTexture = auroraSDK->enhancedImaging.peekDepthCameraRelatedRectifiedImage(
+            textureFrame, depthFrame.desc.timestamp_ns, &errCode);
+
+        cv::Mat textureBGR;
+        if (hasTexture)
+        {
+            textureFrame.image.toMat(textureBGR);
+            if (!textureBGR.empty() && textureBGR.channels() == 1)
+                cv::cvtColor(textureBGR, textureBGR, cv::COLOR_GRAY2BGR);
+            // Resize texture to match point cloud grid if dimensions differ
+            if (!textureBGR.empty() &&
+                (textureBGR.cols != xyzMat.cols || textureBGR.rows != xyzMat.rows))
+            {
+                cv::resize(textureBGR, textureBGR, xyzMat.size(), 0, 0, cv::INTER_LINEAR);
+            }
+        }
+
+        // Build an organised PointCloud2 (same width/height as the depth grid so
+        // downstream tools can treat it as a structured cloud if desired)
+        const int rows = xyzMat.rows;
+        const int cols = xyzMat.cols;
+
+        sensor_msgs::PointCloud2 cloud;
+        cloud.header = header;
+        cloud.height = rows;
+        cloud.width  = cols;
+        cloud.is_dense = false;  // may contain NaN for invalid pixels
+
+        // Field layout: x, y, z (float32), padding, rgb packed as float32
+        sensor_msgs::PointField fx, fy, fz, frgb;
+        fx.name = "x";    fx.offset = 0;  fx.datatype = sensor_msgs::PointField::FLOAT32; fx.count = 1;
+        fy.name = "y";    fy.offset = 4;  fy.datatype = sensor_msgs::PointField::FLOAT32; fy.count = 1;
+        fz.name = "z";    fz.offset = 8;  fz.datatype = sensor_msgs::PointField::FLOAT32; fz.count = 1;
+        frgb.name = "rgb"; frgb.offset = 16; frgb.datatype = sensor_msgs::PointField::FLOAT32; frgb.count = 1;
+        cloud.fields = {fx, fy, fz, frgb};
+        cloud.point_step = 32;  // 4 floats × 4 bytes + 4 bytes padding × 2 (pad after z, pad after rgb)
+        // Simpler: use 5 × float32 layout – x,y,z,_,rgb
+        // point_step = 20 bytes total but must be aligned; use 20 directly.
+        // Re-layout cleanly: x(0) y(4) z(8) pad(12) rgb(16) pad(20) → step=20 is fine.
+        cloud.point_step = 20;
+        frgb.offset = 16;
+        cloud.fields = {fx, fy, fz, frgb};
+
+        cloud.row_step = cloud.point_step * cloud.width;
+        cloud.data.resize(cloud.row_step * cloud.height, 0);
+
+        uint8_t* dataPtr = cloud.data.data();
+        for (int r = 0; r < rows; ++r)
+        {
+            for (int c = 0; c < cols; ++c)
+            {
+                uint8_t* pointPtr = dataPtr + r * cloud.row_step + c * cloud.point_step;
+                const cv::Vec3f& xyz = xyzMat.at<cv::Vec3f>(r, c);
+
+                float px = xyz[0], py = xyz[1], pz = xyz[2];
+
+                // Emit NaN for invalid points so is_dense=false consumers skip them
+                if (std::isnan(px) || std::isnan(py) || std::isnan(pz) ||
+                    std::isinf(px) || std::isinf(py) || std::isinf(pz) || pz <= 0.0f)
+                {
+                    const float nan = std::numeric_limits<float>::quiet_NaN();
+                    memcpy(pointPtr + 0,  &nan, 4);
+                    memcpy(pointPtr + 4,  &nan, 4);
+                    memcpy(pointPtr + 8,  &nan, 4);
+                    continue;
+                }
+
+                memcpy(pointPtr + 0,  &px, 4);
+                memcpy(pointPtr + 4,  &py, 4);
+                memcpy(pointPtr + 8,  &pz, 4);
+
+                // Pack BGR → RGB uint32 in the float rgb field
+                uint8_t b = 128, g = 128, rv = 128;
+                if (!textureBGR.empty())
+                {
+                    const cv::Vec3b& bgr = textureBGR.at<cv::Vec3b>(r, c);
+                    b = bgr[0]; g = bgr[1]; rv = bgr[2];
+                }
+                uint32_t rgb32 = (static_cast<uint32_t>(rv) << 16)
+                               | (static_cast<uint32_t>(g)  <<  8)
+                               |  static_cast<uint32_t>(b);
+                float rgbF;
+                memcpy(&rgbF, &rgb32, 4);
+                memcpy(pointPtr + 16, &rgbF, 4);
+            }
+        }
+
+        pubDensePointCloud_.publish(cloud);
     }
 
     void ServerEnhancedImagingWorker::processSemanticSegmentation(const std_msgs::Header &header)
